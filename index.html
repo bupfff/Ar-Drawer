@@ -187,6 +187,7 @@ input[type="range"]::-webkit-slider-runnable-track {
 </div>
 
 <script>
+/* PASSWORD */
 const PASSWORD="3490";
 let input="";
 function press(n){ input+=n; display.value=input }
@@ -216,7 +217,7 @@ let lastTouch=null,startDist=0,startAngle=0;
 let linkZoom=false;
 let track,cap,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
 
-/* SMOOTH ANIMATION */
+/* ANIMATION */
 function lerp(a,b){ return a+(b-a)*0.2 }
 function animate(){
   x=lerp(x,tx); y=lerp(y,ty);
@@ -236,10 +237,11 @@ async function startCamera(){
     if(cap.zoom){
       camMin=cap.zoom.min; camMax=cap.zoom.max;
       zoomSlider.min=camMin; zoomSlider.max=camMax; zoomSlider.step=cap.zoom.step;
-      zoomSlider.value=track.getSettings().zoom||camMin;
-      track.applyConstraints({advanced:[{zoom:zoomSlider.value}]});
+      const initialZoom=track.getSettings().zoom||camMin;
+      zoomSlider.value=initialZoom;
+      track.applyConstraints({advanced:[{zoom:initialZoom}]});
     } else {
-      zoomSlider.min=0.5; zoomSlider.max=3; zoomSlider.step=0.01; zoomSlider.value=1;
+      zoomSlider.min=1; zoomSlider.max=3; zoomSlider.step=0.01; zoomSlider.value=1;
     }
   } catch(e){ alert("Cannot access rear camera."); console.error(e); }
 }
@@ -249,13 +251,14 @@ opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; saveState
 zoomSlider.oninput=()=>{
   const z=parseFloat(zoomSlider.value);
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:z}]});
-  saveState();
+  if(linkZoom){ ts=baseScale*(z/baseCamZoom); saveState(); }
 };
 
-/* LINK ZOOM */
+/* LINK ZOOM BUTTON */
 linkZoomBtn.onclick=()=>{
   linkZoom=!linkZoom;
   linkZoomBtn.textContent=linkZoom?"Unlink":"Link";
+  if(linkZoom) { tx=ty=0; ts=scale; tr=rot; } // center overlay
 };
 
 /* PHOTO PICKER */
@@ -273,9 +276,9 @@ photoBtn.onclick=()=>{
   input.click();
 };
 
-/* TOUCH */
+/* TOUCH HANDLING */
 overlay.addEventListener("touchstart",e=>{
-  if(e.touches.length===1) lastTouch=e.touches[0];
+  if(e.touches.length===1 && !linkZoom) lastTouch=e.touches[0];
   if(e.touches.length===2){
     const [a,b]=e.touches;
     startDist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
@@ -318,8 +321,8 @@ overlay.addEventListener("touchend",()=>{
   const now=Date.now();
   if(now-lastTap<300){
     tx=ty=0; ts=scale=1; tr=rot=0;
-    zoomSlider.value=camMin;
     if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]});
+    zoomSlider.value=camMin;
     saveState();
   }
   lastTap=now;
