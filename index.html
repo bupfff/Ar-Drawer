@@ -52,11 +52,10 @@ input[type="range"]::-webkit-slider-runnable-track {height:6px; background:#222;
 </div>
 
 <script>
-/* PASSWORD */
 const PASSWORD="3490";
 let input="";
-function press(n){ input+=n; display.value=input }
-function clearDisplay(){ input=""; display.value="" }
+function press(n){ input+=n; display.value=input; }
+function clearDisplay(){ input=""; display.value=""; }
 function checkPassword(){
   if(input===PASSWORD){
     lockScreen.style.display="none";
@@ -67,7 +66,7 @@ function checkPassword(){
   } else { clearDisplay(); alert("Wrong password"); }
 }
 
-/* ELEMENTS */
+/* Elements */
 const video=document.getElementById("video");
 const overlay=document.getElementById("overlayImage");
 const zoomSlider=document.getElementById("zoomSlider");
@@ -76,31 +75,30 @@ const photoBtn=document.getElementById("photoBtn");
 const linkZoomBtn=document.getElementById("linkZoomBtn");
 const resetBtn=document.getElementById("resetBtn");
 
-/* STATE */
-let tx=0,ty=0,ts=1,tr=0; // target
-let x=0,y=0,scale=1,rot=0; // smoothed
+/* State */
+let tx=0,ty=0,ts=1,tr=0;
+let x=0,y=0,scale=1,rot=0;
 let lastTouch=null,startDist=0,startAngle=0;
 let linkZoom=false;
-let track,cap,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
+let track=null,cap=null,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
 
-/* ANIMATION */
-function lerp(a,b){ return a+(b-a)*0.2 }
+/* Animate */
+function lerp(a,b){ return a+(b-a)*0.2; }
 function animate(){
   if(!linkZoom){
     x=lerp(x,tx); y=lerp(y,ty); scale=lerp(scale,ts); rot=lerp(rot,tr);
     overlay.style.transform=`translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale}) rotate(${rot}deg)`;
   } else {
-    // linked zoom: lock overlay center, scale directly
     overlay.style.transform=`translate(-50%,-50%) scale(${ts})`;
   }
   requestAnimationFrame(animate);
 }
 animate();
 
-/* CAMERA */
+/* Camera */
 async function startCamera(){
   try {
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:"environment"}}});
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
     video.srcObject=stream;
     track=stream.getVideoTracks()[0];
     cap=track.getCapabilities();
@@ -114,42 +112,39 @@ async function startCamera(){
   } catch(e){ alert("Cannot access rear camera."); console.error(e); }
 }
 
-/* SLIDERS */
+/* Sliders */
 opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; saveState(); };
 zoomSlider.oninput=()=>{
   const z=parseFloat(zoomSlider.value);
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:z}]});
-  if(linkZoom){
-    ts = baseScale*(z/baseCamZoom);
-  }
+  if(linkZoom) ts = baseScale*(z/baseCamZoom);
 };
 
-/* LINK ZOOM BUTTON */
+/* Link Zoom */
 linkZoomBtn.onclick=()=>{
   linkZoom=!linkZoom;
-  linkZoomBtn.textContent = linkZoom ? "Unlink" : "Link";
+  linkZoomBtn.textContent=linkZoom?"Unlink":"Link";
   if(linkZoom){
     baseCamZoom=parseFloat(zoomSlider.value);
     baseScale=ts;
-    tx=ty=0; tr=0; // lock overlay
   }
 };
 
-/* PHOTO PICKER */
+/* Photo */
 photoBtn.onclick=()=>{
   const input=document.createElement("input");
   input.type="file"; input.accept="image/*";
   input.onchange=e=>{
     const file=e.target.files[0]; if(!file) return;
-    overlay.src=URL.createObjectURL(file);
-    overlay.style.display="block";
+    const url=URL.createObjectURL(file);
+    overlay.src=url; overlay.style.display="block";
     tx=ty=0; ts=scale=1; tr=rot=0; overlay.style.opacity=1; opacitySlider.value=1;
     saveState();
   };
   input.click();
 };
 
-/* RESET BUTTON */
+/* Reset */
 resetBtn.onclick=()=>{
   tx=ty=0; ts=scale=1; tr=rot=0; overlay.style.opacity=1; opacitySlider.value=1;
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]});
@@ -157,7 +152,7 @@ resetBtn.onclick=()=>{
   saveState();
 };
 
-/* TOUCH HANDLING */
+/* Touch */
 overlay.addEventListener("touchstart",e=>{
   if(e.touches.length===1 && !linkZoom) lastTouch=e.touches[0];
   if(e.touches.length===2){
@@ -179,12 +174,18 @@ overlay.addEventListener("touchmove",e=>{
     const [a,b]=e.touches;
     const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
     const factor=d/startDist;
+    const centerX=(a.clientX+b.clientX)/2-video.clientWidth/2;
+    const centerY=(a.clientY+b.clientY)/2-video.clientHeight/2;
+
     if(linkZoom){
       let newZoom = baseCamZoom*factor;
       newZoom=Math.max(camMin,Math.min(newZoom,camMax));
       if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:newZoom}]});
       zoomSlider.value=newZoom;
       ts = baseScale*(newZoom/baseCamZoom);
+      // keep overlay centered under fingers
+      tx=-centerX*(ts/baseScale-1);
+      ty=-centerY*(ts/baseScale-1);
     } else {
       ts=Math.max(0.1,Math.min(ts*factor,10));
       const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
@@ -195,7 +196,7 @@ overlay.addEventListener("touchmove",e=>{
   }
 },{passive:false});
 
-/* MEMORY */
+/* Memory */
 function saveState(){
   if(!overlay.src) return;
   localStorage.setItem("overlayState",JSON.stringify({
@@ -206,8 +207,9 @@ function saveState(){
 function restoreState(){
   const s=JSON.parse(localStorage.getItem("overlayState")||"null");
   if(!s || !s.img) return;
+  overlay.src=s.img; overlay.style.display="block";
   tx=s.x; ty=s.y; ts=s.scale; tr=s.rot;
-  overlay.style.opacity=s.opacity; overlay.src=s.img; overlay.style.display="block";
+  overlay.style.opacity=s.opacity;
   zoomSlider.value=s.zoom;
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
 }
