@@ -86,9 +86,13 @@ let track,cap,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
 /* ANIMATION */
 function lerp(a,b){ return a+(b-a)*0.2 }
 function animate(){
-  x=lerp(x,tx); y=lerp(y,ty);
-  scale=lerp(scale,ts); rot=lerp(rot,tr);
-  overlay.style.transform=`translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale}) rotate(${rot}deg)`;
+  if(!linkZoom){
+    x=lerp(x,tx); y=lerp(y,ty); scale=lerp(scale,ts); rot=lerp(rot,tr);
+    overlay.style.transform=`translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale}) rotate(${rot}deg)`;
+  } else {
+    // linked zoom: lock overlay center, scale directly
+    overlay.style.transform=`translate(-50%,-50%) scale(${ts})`;
+  }
   requestAnimationFrame(animate);
 }
 animate();
@@ -106,9 +110,7 @@ async function startCamera(){
       const initialZoom=track.getSettings().zoom||camMin;
       zoomSlider.value=initialZoom;
       track.applyConstraints({advanced:[{zoom:initialZoom}]});
-    } else {
-      zoomSlider.min=1; zoomSlider.max=3; zoomSlider.step=0.01; zoomSlider.value=1;
-    }
+    } else { zoomSlider.min=1; zoomSlider.max=3; zoomSlider.step=0.01; zoomSlider.value=1; }
   } catch(e){ alert("Cannot access rear camera."); console.error(e); }
 }
 
@@ -117,7 +119,9 @@ opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; saveState
 zoomSlider.oninput=()=>{
   const z=parseFloat(zoomSlider.value);
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:z}]});
-  if(linkZoom){ ts = baseScale*(z/baseCamZoom); }
+  if(linkZoom){
+    ts = baseScale*(z/baseCamZoom);
+  }
 };
 
 /* LINK ZOOM BUTTON */
@@ -127,7 +131,7 @@ linkZoomBtn.onclick=()=>{
   if(linkZoom){
     baseCamZoom=parseFloat(zoomSlider.value);
     baseScale=ts;
-    tx=ty=0; tr=0; // lock overlay in place
+    tx=ty=0; tr=0; // lock overlay
   }
 };
 
@@ -193,6 +197,7 @@ overlay.addEventListener("touchmove",e=>{
 
 /* MEMORY */
 function saveState(){
+  if(!overlay.src) return;
   localStorage.setItem("overlayState",JSON.stringify({
     x:tx,y:ty,scale:ts,rot:tr,opacity:overlay.style.opacity,
     zoom:zoomSlider.value,img:overlay.src
@@ -200,9 +205,9 @@ function saveState(){
 }
 function restoreState(){
   const s=JSON.parse(localStorage.getItem("overlayState")||"null");
-  if(!s) return;
+  if(!s || !s.img) return;
   tx=s.x; ty=s.y; ts=s.scale; tr=s.rot;
-  overlay.style.opacity=s.opacity; overlay.src=s.img; overlay.style.display=s.img?"block":"none";
+  overlay.style.opacity=s.opacity; overlay.src=s.img; overlay.style.display="block";
   zoomSlider.value=s.zoom;
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
 }
