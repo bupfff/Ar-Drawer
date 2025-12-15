@@ -5,160 +5,65 @@
 <title>Camera App with Lock</title>
 <style>
 html, body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: black;
+  margin: 0; padding: 0; overflow: hidden; background: black;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white;
   touch-action: none;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  color: white;
 }
-
 #lockScreen {
-  position: fixed;
-  width: 100vw;
-  height: 100vh;
+  position: fixed; width: 100vw; height: 100vh;
   background: radial-gradient(circle at center, #111 0%, #000 100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
   z-index: 1000;
 }
-
 #display {
-  font-size: 2em;
-  background: rgba(30,30,30,0.8);
-  color: #fff;
-  border: 2px solid #fff;
-  padding: 10px;
-  text-align: center;
-  border-radius: 10px;
-  width: 220px;
-  margin-bottom: 20px;
+  font-size: 2em; background: rgba(30,30,30,0.8); color: #fff;
+  border: 2px solid #fff; padding: 10px; text-align: center;
+  border-radius: 10px; width: 220px; margin-bottom: 20px;
   box-shadow: 0 0 10px #fff8;
 }
-
-.btn {
-  width: 60px;
-  height: 60px;
-  margin: 5px;
-  font-size: 1.5em;
-  background: linear-gradient(to bottom, #222, #111);
-  color: white;
-  border: 1px solid #444;
-  border-radius: 12px;
-  cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-  transition: all 0.2s ease;
+.btn { width: 60px; height: 60px; margin: 5px; font-size: 1.5em;
+  background: linear-gradient(to bottom, #222, #111); color: white;
+  border: 1px solid #444; border-radius: 12px; cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: all 0.2s ease;
 }
+.btn:hover { background: linear-gradient(to bottom, #333, #222);
+  box-shadow: 0 0 10px #fff8; transform: translateY(-2px); }
+.btn:active { background: linear-gradient(to bottom, #111, #000);
+  transform: translateY(1px); box-shadow: 0 0 5px #fff4 inset; }
+#keypad div { display: flex; justify-content: center; }
 
-.btn:hover {
-  background: linear-gradient(to bottom, #333, #222);
-  box-shadow: 0 0 10px #fff8;
-  transform: translateY(-2px);
-}
-
-.btn:active {
-  background: linear-gradient(to bottom, #111, #000);
-  transform: translateY(1px);
-  box-shadow: 0 0 5px #fff4 inset;
-}
-
-#keypad div {
-  display: flex;
-  justify-content: center;
-}
-
-#cameraContainer {
-  position: fixed;
-  width: 100vw;
-  height: 100vh;
-  top: 0;
-  left: 0;
-  z-index: 0;
-  display: none;
-}
-
-video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+#cameraContainer { position: fixed; width: 100vw; height: 100vh; top:0; left:0; z-index:0; display:none; }
+video { width:100%; height:100%; object-fit: cover; }
 
 #overlayImage {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  max-width: 80%;
-  max-height: 80%;
-  transform: translate(-50%, -50%);
-  z-index: 5;
-  touch-action: none;
-  display: none;
+  position: absolute; top:50%; left:50%;
+  max-width: 80%; max-height: 80%;
+  transform: translate(-50%,-50%);
+  z-index:5; touch-action:none; display:none;
   transition: transform 0.05s ease;
 }
 
 #controls {
-  position: fixed;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  display: none;
-  gap: 10px;
-  align-items: center;
-  flex-direction: row;
+  position: fixed; bottom:10px; left:50%; transform:translateX(-50%);
+  display:flex; gap:8px; align-items:center; z-index:10;
 }
-
 #controls button {
-  background: linear-gradient(to bottom, #444, #222);
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  height: 34px;
-  padding: 0 12px;
-  font-size: 16px;
-  cursor: pointer;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+  background: linear-gradient(to bottom, #444, #222); color:#fff; border:none;
+  border-radius:10px; height:34px; padding:0 12px; font-size:16px;
+  cursor:pointer; box-shadow:0 4px 8px rgba(0,0,0,0.4);
 }
-
-#controls button:hover {
-  background: linear-gradient(to bottom, #666, #333);
-  box-shadow: 0 0 10px #fff8;
-}
+#controls button:hover { background: linear-gradient(to bottom, #666,#333);
+  box-shadow: 0 0 10px #fff8; }
 
 input[type="range"] {
-  -webkit-appearance: none;
-  width: 100px;
-  height: 6px;
-  background: #333;
-  border-radius: 5px;
-  outline: none;
-  transition: 0.2s ease;
+  -webkit-appearance:none; width:100px; height:6px; background:#333; border-radius:5px; outline:none;
 }
-
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  height: 18px;
-  width: 18px;
-  background: #fff;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 0 10px #fff8;
-  transition: 0.2s ease;
-  margin-top: -6px;
+  -webkit-appearance:none; height:18px; width:18px; background:#fff; border-radius:50%;
+  cursor:pointer; box-shadow:0 0 10px #fff8; margin-top:-6px; transition:0.2s ease;
 }
-
-input[type="range"]::-webkit-slider-thumb:hover {
-  box-shadow: 0 0 15px #fff9;
-}
-
-input[type="range"]::-webkit-slider-runnable-track {
-  height: 6px;
-  background: #222;
-  border-radius: 5px;
-}
+input[type="range"]::-webkit-slider-thumb:hover { box-shadow:0 0 15px #fff9; }
+input[type="range"]::-webkit-slider-runnable-track { height:6px; background:#222; border-radius:5px; }
 </style>
 </head>
 <body>
@@ -184,6 +89,7 @@ input[type="range"]::-webkit-slider-runnable-track {
   <input id="opacitySlider" type="range" min="0.1" max="1" step="0.01" value="1">
   <button id="photoBtn">Photo</button>
   <button id="linkZoomBtn">Link Zoom</button>
+  <button id="resetBtn" title="Reset overlay and camera zoom">Reset</button>
 </div>
 
 <script>
@@ -209,10 +115,11 @@ const zoomSlider=document.getElementById("zoomSlider");
 const opacitySlider=document.getElementById("opacitySlider");
 const photoBtn=document.getElementById("photoBtn");
 const linkZoomBtn=document.getElementById("linkZoomBtn");
+const resetBtn=document.getElementById("resetBtn");
 
 /* STATE */
 let tx=0,ty=0,ts=1,tr=0; // target
-let x=0,y=0,scale=1,rot=0; // smooth
+let x=0,y=0,scale=1,rot=0; // smoothed
 let lastTouch=null,startDist=0,startAngle=0;
 let linkZoom=false;
 let track,cap,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
@@ -251,14 +158,14 @@ opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; saveState
 zoomSlider.oninput=()=>{
   const z=parseFloat(zoomSlider.value);
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:z}]});
-  if(linkZoom){ ts=baseScale*(z/baseCamZoom); saveState(); }
+  if(linkZoom){ ts=baseScale*(z/baseCamZoom); ts=Math.max(camMin,Math.min(ts,camMax)); saveState(); }
 };
 
 /* LINK ZOOM BUTTON */
 linkZoomBtn.onclick=()=>{
   linkZoom=!linkZoom;
   linkZoomBtn.textContent=linkZoom?"Unlink":"Link";
-  if(linkZoom) { tx=ty=0; ts=scale; tr=rot; } // center overlay
+  if(linkZoom) { tx=ty=0; ts=scale; tr=rot=0; baseScale=ts; baseCamZoom=parseFloat(zoomSlider.value); }
 };
 
 /* PHOTO PICKER */
@@ -266,14 +173,21 @@ photoBtn.onclick=()=>{
   const input=document.createElement("input");
   input.type="file"; input.accept="image/*";
   input.onchange=e=>{
-    const file=e.target.files[0];
-    if(!file) return;
+    const file=e.target.files[0]; if(!file) return;
     overlay.src=URL.createObjectURL(file);
     overlay.style.display="block";
-    tx=ty=0; ts=scale=1; tr=rot=0;
+    tx=ty=0; ts=scale=1; tr=rot=0; opacitySlider.value=1; overlay.style.opacity=1;
     saveState();
   };
   input.click();
+};
+
+/* RESET BUTTON */
+resetBtn.onclick=()=>{
+  tx=ty=0; ts=scale=1; tr=rot=0; overlay.style.opacity=1; opacitySlider.value=1;
+  if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]});
+  zoomSlider.value=camMin;
+  saveState();
 };
 
 /* TOUCH HANDLING */
@@ -283,8 +197,7 @@ overlay.addEventListener("touchstart",e=>{
     const [a,b]=e.touches;
     startDist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
     startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
-    baseCamZoom=parseFloat(zoomSlider.value);
-    baseScale=ts;
+    baseCamZoom=parseFloat(zoomSlider.value); baseScale=ts;
   }
 });
 
@@ -315,36 +228,18 @@ overlay.addEventListener("touchmove",e=>{
   }
 },{passive:false});
 
-/* DOUBLE TAP RESET */
-let lastTap=0;
-overlay.addEventListener("touchend",()=>{
-  const now=Date.now();
-  if(now-lastTap<300){
-    tx=ty=0; ts=scale=1; tr=rot=0;
-    if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]});
-    zoomSlider.value=camMin;
-    saveState();
-  }
-  lastTap=now;
-});
-
 /* MEMORY */
 function saveState(){
   localStorage.setItem("overlayState",JSON.stringify({
-    x:tx,y:ty,scale:ts,rot:tr,
-    opacity:overlay.style.opacity,
-    zoom:zoomSlider.value,
-    img:overlay.src
+    x:tx,y:ty,scale:ts,rot:tr,opacity:overlay.style.opacity,
+    zoom:zoomSlider.value,img:overlay.src
   }));
 }
-
 function restoreState(){
   const s=JSON.parse(localStorage.getItem("overlayState")||"null");
   if(!s) return;
   tx=s.x; ty=s.y; ts=s.scale; tr=s.rot;
-  overlay.style.opacity=s.opacity;
-  overlay.src=s.img;
-  overlay.style.display=s.img?"block":"none";
+  overlay.style.opacity=s.opacity; overlay.src=s.img; overlay.style.display=s.img?"block":"none";
   zoomSlider.value=s.zoom;
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
 }
