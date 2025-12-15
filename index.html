@@ -3,39 +3,87 @@
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Camera App with Lock</title>
+
 <style>
 html,body{
   margin:0;padding:0;overflow:hidden;
   background:black;color:white;
-  touch-action:none;font-family:system-ui
+  touch-action:none;
+  font-family:'Segoe UI',system-ui
 }
+
+/* ---------- LOCK SCREEN ---------- */
 #lockScreen{
   position:fixed;inset:0;
+  background:radial-gradient(circle,#111,#000);
   display:flex;flex-direction:column;
   justify-content:center;align-items:center;
-  background:#000;z-index:1000
+  z-index:1000
 }
+
 #display{
-  font-size:2em;width:220px;
-  text-align:center;margin-bottom:20px
+  font-size:2em;
+  background:rgba(30,30,30,.8);
+  border:2px solid #fff;
+  padding:10px;
+  width:220px;
+  text-align:center;
+  border-radius:10px;
+  margin-bottom:20px;
 }
-.btn{width:60px;height:60px;margin:4px}
+
+.btn{
+  width:60px;height:60px;margin:5px;
+  font-size:1.5em;
+  background:linear-gradient(#222,#111);
+  color:white;
+  border-radius:12px;
+  border:1px solid #444;
+  box-shadow:0 0 10px #fff8;
+}
+
+/* ---------- CAMERA ---------- */
 #cameraContainer{position:fixed;inset:0;display:none}
 video{width:100%;height:100%;object-fit:cover}
+
 #overlayImage{
-  position:absolute;top:50%;left:50%;
+  position:absolute;
+  top:50%;left:50%;
   transform:translate(-50%,-50%);
-  max-width:80%;max-height:80%;
-  display:none;touch-action:none;z-index:5
+  max-width:80%;
+  max-height:80%;
+  display:none;
+  touch-action:none;
+  z-index:5;
 }
+
+/* ---------- CONTROLS ---------- */
 #controls{
-  position:fixed;bottom:15px;left:15px;
-  display:none;gap:10px;z-index:10
+  position:fixed;
+  bottom:12px;left:50%;
+  transform:translateX(-50%);
+  display:none;
+  flex-wrap:wrap;
+  gap:8px;
+  background:rgba(0,0,0,.6);
+  padding:10px;
+  border-radius:14px;
+  z-index:10;
 }
+
+#controls button{
+  background:#333;color:white;
+  border:none;border-radius:10px;
+  padding:6px 10px;
+}
+
+input[type="range"]{width:120px}
 </style>
 </head>
+
 <body>
 
+<!-- LOCK -->
 <div id="lockScreen">
   <h2>Enter Password</h2>
   <input id="display" type="password" readonly>
@@ -55,22 +103,24 @@ video{width:100%;height:100%;object-fit:cover}
   </div>
 </div>
 
+<!-- CAMERA -->
 <div id="cameraContainer">
   <video id="video" autoplay playsinline muted></video>
 </div>
 
 <img id="overlayImage">
 
+<!-- CONTROLS -->
 <div id="controls">
   <input id="zoomSlider" type="range">
-  <input id="opacitySlider" type="range" min="0.1" max="1" step="0.01" value="1">
+  <input id="opacitySlider" type="range" min="0.1" max="1" step="0.01">
   <button id="photoBtn">Choose Photo</button>
   <button id="linkZoomBtn">Link Zoom</button>
 </div>
 
 <script>
-/* -------- DOM -------- */
-const lockScreen=document.getElementById("lockScreen");
+/* ---------- DOM ---------- */
+const lockScreen=lockScreenEl=document.getElementById("lockScreen");
 const display=document.getElementById("display");
 const cameraContainer=document.getElementById("cameraContainer");
 const controls=document.getElementById("controls");
@@ -81,7 +131,7 @@ const opacitySlider=document.getElementById("opacitySlider");
 const photoBtn=document.getElementById("photoBtn");
 const linkZoomBtn=document.getElementById("linkZoomBtn");
 
-/* -------- LOCK -------- */
+/* ---------- LOCK ---------- */
 const PASSWORD="3490"; let input="";
 function press(n){input+=n;display.value=input}
 function clearDisplay(){input="";display.value=""}
@@ -94,26 +144,43 @@ function checkPassword(){
   }else{alert("Wrong password");clearDisplay()}
 }
 
-/* -------- TRANSFORMS -------- */
-let originX=0,originY=0,scale=1,rotation=0;
-let tX=0,tY=0,tScale=1,tRot=0;
-function lerp(a,b,t){return a+(b-a)*t}
-function applyTransform(){
-  overlay.style.transform=
-    `translate(-50%,-50%) translate(${originX}px,${originY}px)
-     scale(${scale}) rotate(${rotation}deg)`
+/* ---------- STATE ---------- */
+let x=0,y=0,scale=1,rot=0;
+let tx=0,ty=0,ts=1,tr=0;
+let lastTouch=null,startDist=0,startAng=0;
+let videoTrack=null,supportsZoom=false,linkZoom=false;
+let camMin=1,camMax=1;
+
+/* ---------- MEMORY ---------- */
+function saveState(){
+  localStorage.setItem("overlayState",JSON.stringify({
+    x:tx,y:ty,scale:ts,rot:tr,
+    opacity:overlay.style.opacity||1,
+    img:overlay.src
+  }));
 }
+function loadState(){
+  const s=JSON.parse(localStorage.getItem("overlayState"));
+  if(!s)return;
+  tx=s.x;ty=s.y;ts=s.scale;tr=s.rot;
+  overlay.style.opacity=s.opacity;
+  overlay.src=s.img;
+  overlay.style.display="block";
+}
+
+/* ---------- SMOOTH ---------- */
+const lerp=(a,b,t)=>a+(b-a)*t;
 (function animate(){
-  originX=lerp(originX,tX,.15);
-  originY=lerp(originY,tY,.15);
-  scale=lerp(scale,tScale,.15);
-  rotation=lerp(rotation,tRot,.15);
-  applyTransform();
+  x=lerp(x,tx,.15);y=lerp(y,ty,.15);
+  scale=lerp(scale,ts,.15);
+  rot=lerp(rot,tr,.15);
+  overlay.style.transform=
+    `translate(-50%,-50%) translate(${x}px,${y}px)
+     scale(${scale}) rotate(${rot}deg)`;
   requestAnimationFrame(animate);
 })();
 
-/* -------- CAMERA -------- */
-let videoTrack=null,supportsZoom=false,linkZoom=false;
+/* ---------- CAMERA ---------- */
 async function startCamera(){
   const stream=await navigator.mediaDevices.getUserMedia({
     video:{facingMode:{exact:"environment"}}
@@ -123,65 +190,77 @@ async function startCamera(){
   const cap=videoTrack.getCapabilities();
   if(cap.zoom){
     supportsZoom=true;
-    zoomSlider.min=cap.zoom.min;
-    zoomSlider.max=cap.zoom.max;
+    camMin=cap.zoom.min;camMax=cap.zoom.max;
+    zoomSlider.min=camMin;
+    zoomSlider.max=camMax;
     zoomSlider.step=cap.zoom.step;
-    zoomSlider.value=cap.zoom.min;
-    zoomSlider.oninput=()=>videoTrack.applyConstraints({
-      advanced:[{zoom:+zoomSlider.value}]
-    });
+    zoomSlider.value=camMin;
+    zoomSlider.oninput=()=>{
+      videoTrack.applyConstraints({advanced:[{zoom:+zoomSlider.value}]});
+    };
   }
+  loadState();
 }
 
-/* -------- CONTROLS -------- */
-opacitySlider.oninput=()=>overlay.style.opacity=opacitySlider.value;
+/* ---------- CONTROLS ---------- */
+opacitySlider.oninput=()=>{
+  overlay.style.opacity=opacitySlider.value;
+  saveState();
+};
+
 photoBtn.onclick=()=>{
   const i=document.createElement("input");
   i.type="file";i.accept="image/*";
   i.onchange=e=>{
     overlay.src=URL.createObjectURL(e.target.files[0]);
     overlay.style.display="block";
-    tX=tY=0;tScale=1;tRot=0;
+    tx=ty=0;ts=1;tr=0;
+    saveState();
   };
   i.click();
 };
+
 linkZoomBtn.onclick=()=>{
   linkZoom=!linkZoom;
   linkZoomBtn.textContent=linkZoom?"Unlink Zoom":"Link Zoom";
 };
 
-/* -------- TOUCH -------- */
-let lastTouch=null,startDist=0,startAng=0;
+/* ---------- TOUCH ---------- */
 overlay.addEventListener("touchstart",e=>{
   if(e.touches.length===1)lastTouch=e.touches[0];
   if(e.touches.length===2){
     const[a,b]=e.touches;
     startDist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-    startAng=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX)*180/Math.PI;
+    startAng=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
   }
 });
+
 overlay.addEventListener("touchmove",e=>{
   e.preventDefault();
   if(e.touches.length===1 && lastTouch && !linkZoom){
-    tX+=e.touches[0].clientX-lastTouch.clientX;
-    tY+=e.touches[0].clientY-lastTouch.clientY;
+    tx+=e.touches[0].clientX-lastTouch.clientX;
+    ty+=e.touches[0].clientY-lastTouch.clientY;
     lastTouch=e.touches[0];
+    saveState();
   }
   if(e.touches.length===2){
     const[a,b]=e.touches;
     const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-    const f=d/startDist;
-    tScale=Math.max(.1,Math.min(tScale*f,10));
-    if(!linkZoom){
-      const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX)*180/Math.PI;
-      tRot+=ang-startAng;startAng=ang;
-    }
+    let next=ts*(d/startDist);
+
     if(linkZoom && supportsZoom){
-      const z=Math.max(zoomSlider.min,Math.min(tScale,zoomSlider.max));
-      videoTrack.applyConstraints({advanced:[{zoom:z}]});
-      zoomSlider.value=z;
+      next=Math.max(camMin,Math.min(next,camMax));
+      videoTrack.applyConstraints({advanced:[{zoom:next}]});
+      zoomSlider.value=next;
+    }else{
+      const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
+      tr+= (ang-startAng)*180/Math.PI;
+      startAng=ang;
     }
+
+    ts=next;
     startDist=d;
+    saveState();
   }
 },{passive:false});
 </script>
