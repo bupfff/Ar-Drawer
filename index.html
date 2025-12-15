@@ -16,7 +16,7 @@ html, body {margin:0; padding:0; overflow:hidden; background:black; font-family:
 video {width:100%; height:100%; object-fit:cover;}
 #overlayImage {position:absolute; top:50%; left:50%; max-width:80%; max-height:80%; transform:translate(-50%,-50%) scale(1) rotate(0deg); z-index:5; touch-action:none; display:none; transition: transform 0.05s linear;}
 
-#controls {position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:5px; align-items:center; z-index:10; max-width:95vw; flex-wrap:nowrap;}
+#controls {position:fixed; bottom:10px; left:50%; transform:translateX(-50%); display:flex; gap:5px; align-items:center; z-index:10; max-width:95vw; flex-wrap:nowrap;}
 #controls button {background:linear-gradient(to bottom,#444,#222); color:#fff; border:none; border-radius:10px; height:34px; padding:0 10px; font-size:14px; cursor:pointer; box-shadow:0 4px 8px rgba(0,0,0,0.4);}
 #controls button:hover {background:linear-gradient(to bottom,#666,#333); box-shadow:0 0 10px #fff8;}
 input[type="range"] {-webkit-appearance:none; width:80px; height:6px; background:#333; border-radius:5px; outline:none;}
@@ -52,6 +52,7 @@ input[type="range"]::-webkit-slider-runnable-track {height:6px; background:#222;
 </div>
 
 <script>
+/* Lock Screen */
 const PASSWORD="3490";
 let input="";
 function press(n){ input+=n; display.value=input; }
@@ -74,19 +75,18 @@ const photoBtn=document.getElementById("photoBtn");
 const linkZoomBtn=document.getElementById("linkZoomBtn");
 const resetBtn=document.getElementById("resetBtn");
 
-/* State */
-let x=0,y=0,scale=1,rot=0;
+/* Overlay State */
 let tx=0,ty=0,ts=1,tr=0;
 let lastTouch=null,startDist=0,startAngle=0;
 let linkZoom=false;
-let track=null,cap=null,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
 
-/* Animation for smooth transform */
-function lerp(a,b){ return a+(b-a)*0.2; }
+/* Camera State */
+let track=null,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
+
+/* Animate overlay */
 function animate(){
   if(!linkZoom){
-    x=lerp(x,tx); y=lerp(y,ty); scale=lerp(scale,ts); rot=lerp(rot,tr);
-    overlay.style.transform=`translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale}) rotate(${rot}deg)`;
+    overlay.style.transform=`translate(-50%,-50%) translate(${tx}px,${ty}px) scale(${ts}) rotate(${tr}deg)`;
   } else {
     overlay.style.transform=`translate(-50%,-50%) scale(${ts})`;
   }
@@ -96,18 +96,18 @@ animate();
 
 /* Camera */
 async function startCamera(){
-  try {
+  try{
     const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
     video.srcObject=stream;
     track=stream.getVideoTracks()[0];
-    cap=track.getCapabilities();
+    const cap=track.getCapabilities();
     if(cap.zoom){
       camMin=cap.zoom.min; camMax=cap.zoom.max;
       zoomSlider.min=camMin; zoomSlider.max=camMax; zoomSlider.step=cap.zoom.step;
       let z0=track.getSettings().zoom||camMin;
       zoomSlider.value=z0; track.applyConstraints({advanced:[{zoom:z0}]});
     }
-  } catch(e){ alert("Cannot access rear camera."); console.error(e); }
+  }catch(e){ alert("Cannot access rear camera."); console.error(e); }
 }
 
 /* Sliders */
@@ -125,24 +125,26 @@ linkZoomBtn.onclick=()=>{
   if(linkZoom){ baseCamZoom=parseFloat(zoomSlider.value); baseScale=ts; }
 };
 
-/* Photo */
+/* Photo Upload */
 photoBtn.onclick=()=>{
   const input=document.createElement("input");
   input.type="file"; input.accept="image/*";
   input.onchange=e=>{
     const file=e.target.files[0]; if(!file) return;
     overlay.src=URL.createObjectURL(file); overlay.style.display="block";
-    tx=ty=0; ts=scale=1; tr=rot=0; overlay.style.opacity=1; opacitySlider.value=1;
+    tx=ty=0; ts=1; tr=0; overlay.style.opacity=1; opacitySlider.value=1;
   };
   input.click();
 };
 
 /* Reset */
-resetBtn.onclick=()=>{ tx=ty=0; ts=scale=1; tr=rot=0; overlay.style.opacity=1; opacitySlider.value=1; 
-  if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]}); zoomSlider.value=camMin; 
+resetBtn.onclick=()=>{
+  tx=ty=0; ts=1; tr=0; overlay.style.opacity=1; opacitySlider.value=1;
+  if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]});
+  zoomSlider.value=camMin;
 };
 
-/* Touch */
+/* Touch Gestures */
 overlay.addEventListener("touchstart",e=>{
   if(e.touches.length===1 && !linkZoom) lastTouch=e.touches[0];
   if(e.touches.length===2){
@@ -164,7 +166,6 @@ overlay.addEventListener("touchmove",e=>{
     const [a,b]=e.touches;
     const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
     const factor=d/startDist;
-
     if(linkZoom){
       let newZoom = baseCamZoom*factor;
       newZoom=Math.max(camMin,Math.min(newZoom,camMax));
@@ -175,7 +176,7 @@ overlay.addEventListener("touchmove",e=>{
       ts=Math.max(0.1,Math.min(ts*factor,10));
       const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
       tr+= (ang-startAngle)*(180/Math.PI);
-      startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
+      startAngle=ang;
     }
     startDist=d;
   }
