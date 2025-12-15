@@ -1,3 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Camera Overlay</title>
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  background:black;
+  height:100%;
+  overflow:hidden;
+  touch-action:none;
+  font-family:sans-serif;
+}
+
+#lockScreen{
+  position:fixed;
+  inset:0;
+  background:black;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+}
+
+#display{
+  width:160px;
+  font-size:24px;
+  text-align:center;
+  margin-bottom:10px;
+}
+
+.keypad{
+  display:grid;
+  grid-template-columns:repeat(3,60px);
+  gap:10px;
+}
+
+.keypad button{
+  font-size:20px;
+  padding:10px;
+}
+
+#cameraContainer{
+  position:fixed;
+  inset:0;
+  display:none;
+}
+
+video{
+  position:absolute;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+
+#overlayImage{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform-origin:center center;
+  display:none;
+  touch-action:none;
+}
+
+#controls{
+  position:fixed;
+  bottom:10px;
+  left:50%;
+  transform:translateX(-50%);
+  display:none;
+  flex-direction:row;
+  align-items:center;
+  gap:6px;
+  z-index:10;
+}
+
+#controls button{
+  background:rgba(0,0,0,.6);
+  color:white;
+  border:none;
+  border-radius:8px;
+  padding:6px 8px;
+  font-size:14px;
+}
+
+#controls input[type=range]{
+  width:90px;
+}
+</style>
+</head>
+<body>
+
+<div id="lockScreen">
+  <input id="display" disabled>
+  <div class="keypad">
+    <button onclick="press(1)">1</button>
+    <button onclick="press(2)">2</button>
+    <button onclick="press(3)">3</button>
+    <button onclick="press(4)">4</button>
+    <button onclick="press(5)">5</button>
+    <button onclick="press(6)">6</button>
+    <button onclick="press(7)">7</button>
+    <button onclick="press(8)">8</button>
+    <button onclick="press(9)">9</button>
+    <button onclick="clearDisplay()">C</button>
+    <button onclick="press(0)">0</button>
+    <button onclick="checkPassword()">✔</button>
+  </div>
+</div>
+
+<div id="cameraContainer">
+  <video id="video" autoplay playsinline></video>
+  <img id="overlayImage">
+</div>
+
+<div id="controls">
+  <button id="photoBtn">📷</button>
+  <input id="opacitySlider" type="range" min="0" max="1" step="0.01" value="1">
+  <input id="zoomSlider" type="range">
+  <button id="linkZoomBtn">Link</button>
+</div>
+
 <script>
 /* ---------- LOCK ---------- */
 const PASSWORD="3490";
@@ -34,10 +159,8 @@ let baseCamZoom=1,baseScale=1;
 function lerp(a,b){ return a+(b-a)*.18 }
 function animate(){
   x=lerp(x,tx); y=lerp(y,ty);
-  scale=lerp(scale,ts);
-  rot=lerp(rot,tr);
-  overlay.style.transform=
-    `translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale}) rotate(${rot}deg)`;
+  scale=lerp(scale,ts); rot=lerp(rot,tr);
+  overlay.style.transform=`translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale}) rotate(${rot}deg)`;
   requestAnimationFrame(animate);
 }
 animate();
@@ -69,7 +192,7 @@ async function startCamera(){
   };
 }
 
-/* ---------- IMAGE PICKER (FIXED) ---------- */
+/* ---------- IMAGE PICKER ---------- */
 photoBtn.onclick=()=>{
   const input=document.createElement("input");
   input.type="file";
@@ -110,13 +233,11 @@ overlay.addEventListener("touchstart",e=>{
 
 overlay.addEventListener("touchmove",e=>{
   e.preventDefault();
-
   if(e.touches.length===1 && lastTouch && !linkZoom){
     tx+=e.touches[0].clientX-lastTouch.clientX;
     ty+=e.touches[0].clientY-lastTouch.clientY;
     lastTouch=e.touches[0];
   }
-
   if(e.touches.length===2){
     const [a,b]=e.touches;
     const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
@@ -132,11 +253,25 @@ overlay.addEventListener("touchmove",e=>{
       ts=Math.max(.1,Math.min(ts*factor,10));
       const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
       tr+=(ang-startAngle)*180/Math.PI;
-      startAngle=ang;
+      startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
     }
     startDist=d;
   }
 },{passive:false});
+
+/* ---------- DOUBLE-TAP RESET ---------- */
+let lastTap=0;
+overlay.addEventListener("touchend",()=>{
+  const now=Date.now();
+  if(now-lastTap<300){
+    // reset all
+    tx=ty=0; ts=scale=1; tr=rot=0;
+    zoomSlider.value=camMin;
+    track?.applyConstraints({advanced:[{zoom:camMin}]});
+    saveState();
+  }
+  lastTap=now;
+});
 
 /* ---------- MEMORY ---------- */
 function saveState(){
@@ -160,3 +295,5 @@ function restoreState(){
   track?.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
 }
 </script>
+</body>
+</html>
