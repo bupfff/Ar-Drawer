@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Camera App Linked Zoom Stable</title>
+<title>Camera App Stable Linked Zoom</title>
 <style>
 html, body {margin:0; padding:0; overflow:hidden; background:black; font-family:'Segoe UI',sans-serif; color:white; touch-action:none;}
 #lockScreen {position:fixed; width:100vw; height:100vh; background: radial-gradient(circle at center, #111 0%, #000 100%); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:1000;}
@@ -14,7 +14,7 @@ html, body {margin:0; padding:0; overflow:hidden; background:black; font-family:
 
 #cameraContainer {position:fixed; width:100vw; height:100vh; top:0; left:0; z-index:0; display:none;}
 video {width:100%; height:100%; object-fit:cover;}
-#overlayImage {position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(1) rotate(0deg); z-index:5; touch-action:none; display:none; transition: transform 0.05s linear;}
+#overlayImage {position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(1) rotate(0deg); z-index:5; touch-action:none; display:none; transition: transform 0.02s linear;}
 
 #controls {position:fixed; bottom:10px; left:50%; transform:translateX(-50%); display:flex; gap:5px; align-items:center; z-index:10; max-width:95vw; flex-wrap:nowrap;}
 #controls button {background:linear-gradient(to bottom,#444,#222); color:#fff; border:none; border-radius:10px; height:34px; padding:0 10px; font-size:14px; cursor:pointer; box-shadow:0 4px 8px rgba(0,0,0,0.4);}
@@ -102,14 +102,13 @@ async function startCamera(){
 /* Sliders */
 opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; };
 zoomSlider.oninput=()=>{
-  ts = parseFloat(zoomSlider.value);
+  ts=parseFloat(zoomSlider.value);
 };
 
 /* Linked Zoom */
 linkZoomBtn.onclick=()=>{
   linkZoom=!linkZoom;
   linkZoomBtn.textContent=linkZoom?"Unlink":"Link";
-  if(linkZoom){ zoomSlider.value=ts; }
 };
 
 /* Photo Upload */
@@ -156,7 +155,7 @@ overlay.addEventListener("touchmove",e=>{
       ts=Math.max(0.1,Math.min(ts*factor,10));
       const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
       tr+= (ang-startAngle)*(180/Math.PI);
-      startAngle=ang;
+      startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
     } else {
       ts=Math.max(1,Math.min(ts*factor,3));
       zoomSlider.value=ts;
@@ -164,6 +163,8 @@ overlay.addEventListener("touchmove",e=>{
     startDist=d;
   }
 },{passive:false});
+
+overlay.addEventListener("touchend",()=>{ lastTouch=null; });
 </script>
 </body>
 </html>
