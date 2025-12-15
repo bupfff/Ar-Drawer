@@ -1,134 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
-<title>Camera Overlay</title>
-
-<style>
-html,body{
-  margin:0;
-  padding:0;
-  background:black;
-  height:100%;
-  overflow:hidden;
-  touch-action:none;
-  font-family:sans-serif;
-}
-
-#lockScreen{
-  position:fixed;
-  inset:0;
-  background:black;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-}
-
-#display{
-  width:160px;
-  font-size:24px;
-  text-align:center;
-  margin-bottom:10px;
-}
-
-.keypad{
-  display:grid;
-  grid-template-columns:repeat(3,60px);
-  gap:10px;
-}
-
-.keypad button{
-  font-size:20px;
-  padding:10px;
-}
-
-#cameraContainer{
-  position:fixed;
-  inset:0;
-  display:none;
-}
-
-video{
-  position:absolute;
-  width:100%;
-  height:100%;
-  object-fit:cover;
-}
-
-#overlayImage{
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform-origin:center center;
-  display:none;
-  touch-action:none;
-}
-
-#controls{
-  position:fixed;
-  bottom:10px;
-  left:50%;
-  transform:translateX(-50%);
-  display:none;
-  flex-direction:row;
-  align-items:center;
-  gap:6px;
-  z-index:10;
-}
-
-#controls button{
-  background:rgba(0,0,0,.6);
-  color:white;
-  border:none;
-  border-radius:8px;
-  padding:6px 8px;
-  font-size:14px;
-}
-
-#controls input[type=range]{
-  width:90px;
-}
-</style>
-</head>
-
-<body>
-
-<div id="lockScreen">
-  <input id="display" disabled>
-  <div class="keypad">
-    <button onclick="press(1)">1</button>
-    <button onclick="press(2)">2</button>
-    <button onclick="press(3)">3</button>
-    <button onclick="press(4)">4</button>
-    <button onclick="press(5)">5</button>
-    <button onclick="press(6)">6</button>
-    <button onclick="press(7)">7</button>
-    <button onclick="press(8)">8</button>
-    <button onclick="press(9)">9</button>
-    <button onclick="clearDisplay()">C</button>
-    <button onclick="press(0)">0</button>
-    <button onclick="checkPassword()">✔</button>
-  </div>
-</div>
-
-<div id="cameraContainer">
-  <video id="video" autoplay playsinline></video>
-  <img id="overlayImage">
-</div>
-
-<div id="controls">
-  <button id="photoBtn">📷</button>
-  <input id="opacitySlider" type="range" min="0" max="1" step="0.01" value="1">
-  <input id="zoomSlider" type="range">
-  <button id="linkZoomBtn">Link</button>
-</div>
-
 <script>
+/* ---------- LOCK ---------- */
 const PASSWORD="3490";
 let input="";
-
 function press(n){ input+=n; display.value=input }
 function clearDisplay(){ input=""; display.value="" }
 function checkPassword(){
@@ -138,9 +11,10 @@ function checkPassword(){
     controls.style.display="flex";
     startCamera();
     restoreState();
-  } else { alert("Wrong"); clearDisplay(); }
+  } else { clearDisplay(); }
 }
 
+/* ---------- ELEMENTS ---------- */
 const video=document.getElementById("video");
 const overlay=document.getElementById("overlayImage");
 const zoomSlider=document.getElementById("zoomSlider");
@@ -148,16 +22,16 @@ const opacitySlider=document.getElementById("opacitySlider");
 const photoBtn=document.getElementById("photoBtn");
 const linkZoomBtn=document.getElementById("linkZoomBtn");
 
+/* ---------- STATE ---------- */
 let x=0,y=0,scale=1,rot=0;
 let tx=0,ty=0,ts=1,tr=0;
 let lastTouch=null,startDist=0,startAngle=0;
-
 let linkZoom=false;
 let track,cap,camMin,camMax;
 let baseCamZoom=1,baseScale=1;
 
-function lerp(a,b){ return a+(b-a)*.15 }
-
+/* ---------- SMOOTHING ---------- */
+function lerp(a,b){ return a+(b-a)*.18 }
 function animate(){
   x=lerp(x,tx); y=lerp(y,ty);
   scale=lerp(scale,ts);
@@ -168,6 +42,7 @@ function animate(){
 }
 animate();
 
+/* ---------- CAMERA ---------- */
 async function startCamera(){
   const stream=await navigator.mediaDevices.getUserMedia({
     video:{facingMode:{exact:"environment"}}
@@ -183,10 +58,9 @@ async function startCamera(){
   zoomSlider.min=camMin;
   zoomSlider.max=camMax;
   zoomSlider.step=cap.zoom.step;
-
-  // 🔑 CRITICAL FIX: sync slider to ACTUAL camera zoom
   zoomSlider.value=settings.zoom ?? camMin;
-  baseCamZoom=parseFloat(zoomSlider.value);
+
+  track.applyConstraints({advanced:[{zoom:zoomSlider.value}]});
 
   zoomSlider.oninput=()=>{
     const z=parseFloat(zoomSlider.value);
@@ -195,18 +69,23 @@ async function startCamera(){
   };
 }
 
+/* ---------- IMAGE PICKER (FIXED) ---------- */
 photoBtn.onclick=()=>{
-  const i=document.createElement("input");
-  i.type="file"; i.accept="image/*";
-  i.onchange=e=>{
-    overlay.src=URL.createObjectURL(e.target.files[0]);
+  const input=document.createElement("input");
+  input.type="file";
+  input.accept="image/*";
+  input.onchange=e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+    overlay.src=URL.createObjectURL(file);
     overlay.style.display="block";
     ts=scale=1; tr=rot=0; tx=x=0; ty=y=0;
     saveState();
   };
-  i.click();
+  input.click();
 };
 
+/* ---------- UI ---------- */
 opacitySlider.oninput=()=>{
   overlay.style.opacity=opacitySlider.value;
   saveState();
@@ -217,16 +96,15 @@ linkZoomBtn.onclick=()=>{
   linkZoomBtn.textContent=linkZoom?"Unlink":"Link";
 };
 
+/* ---------- TOUCH ---------- */
 overlay.addEventListener("touchstart",e=>{
   if(e.touches.length===1) lastTouch=e.touches[0];
   if(e.touches.length===2){
     const [a,b]=e.touches;
     startDist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
     startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
-    if(linkZoom){
-      baseCamZoom=parseFloat(zoomSlider.value);
-      baseScale=ts;
-    }
+    baseCamZoom=parseFloat(zoomSlider.value);
+    baseScale=ts;
   }
 });
 
@@ -249,7 +127,7 @@ overlay.addEventListener("touchmove",e=>{
       newZoom=Math.max(camMin,Math.min(newZoom,camMax));
       track.applyConstraints({advanced:[{zoom:newZoom}]});
       zoomSlider.value=newZoom;
-      ts=baseScale*(newZoom/baseCamZoom);
+      ts=baseScale*(newZoom/baseCamZoom || 1);
     } else {
       ts=Math.max(.1,Math.min(ts*factor,10));
       const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
@@ -260,6 +138,7 @@ overlay.addEventListener("touchmove",e=>{
   }
 },{passive:false});
 
+/* ---------- MEMORY ---------- */
 function saveState(){
   localStorage.setItem("overlayState",JSON.stringify({
     x,y,scale,rot,
@@ -275,11 +154,9 @@ function restoreState(){
   x=tx=s.x; y=ty=s.y;
   scale=ts=s.scale; rot=tr=s.rot;
   overlay.style.opacity=s.opacity;
-  zoomSlider.value=s.zoom;
   overlay.src=s.img;
   overlay.style.display=s.img?"block":"none";
+  zoomSlider.value=s.zoom;
   track?.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
 }
 </script>
-</body>
-</html>
