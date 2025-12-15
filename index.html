@@ -1,129 +1,146 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Camera App with Lock</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Camera Overlay</title>
 
 <style>
 html,body{
-  margin:0;padding:0;overflow:hidden;
-  background:black;color:white;
+  margin:0;
+  padding:0;
+  background:black;
+  height:100%;
+  overflow:hidden;
   touch-action:none;
-  font-family:'Segoe UI',system-ui
+  font-family:sans-serif;
 }
 
-/* ---------- LOCK SCREEN ---------- */
 #lockScreen{
-  position:fixed;inset:0;
-  background:radial-gradient(circle,#111,#000);
-  display:flex;flex-direction:column;
-  justify-content:center;align-items:center;
-  z-index:1000
+  position:fixed;
+  inset:0;
+  background:black;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
 }
 
 #display{
-  font-size:2em;
-  background:rgba(30,30,30,.8);
-  border:2px solid #fff;
-  padding:10px;
-  width:220px;
+  width:160px;
+  font-size:24px;
   text-align:center;
-  border-radius:10px;
-  margin-bottom:20px;
+  margin-bottom:10px;
 }
 
-.btn{
-  width:60px;height:60px;margin:5px;
-  font-size:1.5em;
-  background:linear-gradient(#222,#111);
-  color:white;
-  border-radius:12px;
-  border:1px solid #444;
-  box-shadow:0 0 10px #fff8;
+.keypad{
+  display:grid;
+  grid-template-columns:repeat(3,60px);
+  gap:10px;
 }
 
-/* ---------- CAMERA ---------- */
-#cameraContainer{position:fixed;inset:0;display:none}
-video{width:100%;height:100%;object-fit:cover}
+.keypad button{
+  font-size:20px;
+  padding:10px;
+}
+
+#cameraContainer{
+  position:fixed;
+  inset:0;
+  display:none;
+}
+
+video{
+  position:absolute;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
 
 #overlayImage{
   position:absolute;
-  top:50%;left:50%;
-  transform:translate(-50%,-50%);
-  max-width:80%;
-  max-height:80%;
+  top:50%;
+  left:50%;
+  transform-origin:center center;
   display:none;
   touch-action:none;
-  z-index:5;
 }
 
-/* ---------- CONTROLS ---------- */
 #controls{
   position:fixed;
-  bottom:12px;left:50%;
+  bottom:10px;
+  left:50%;
   transform:translateX(-50%);
   display:none;
-  flex-wrap:wrap;
-  gap:8px;
-  background:rgba(0,0,0,.6);
-  padding:10px;
-  border-radius:14px;
+  flex-direction:row;
+  align-items:center;
+  gap:6px;
   z-index:10;
 }
 
 #controls button{
-  background:#333;color:white;
-  border:none;border-radius:10px;
-  padding:6px 10px;
+  background:rgba(0,0,0,.6);
+  color:white;
+  border:none;
+  border-radius:8px;
+  padding:6px 8px;
+  font-size:14px;
 }
 
-input[type="range"]{width:120px}
+#controls input[type=range]{
+  width:90px;
+}
 </style>
 </head>
 
 <body>
 
-<!-- LOCK -->
 <div id="lockScreen">
-  <h2>Enter Password</h2>
-  <input id="display" type="password" readonly>
-  <div>
-    <button class="btn" onclick="press('1')">1</button>
-    <button class="btn" onclick="press('2')">2</button>
-    <button class="btn" onclick="press('3')">3</button><br>
-    <button class="btn" onclick="press('4')">4</button>
-    <button class="btn" onclick="press('5')">5</button>
-    <button class="btn" onclick="press('6')">6</button><br>
-    <button class="btn" onclick="press('7')">7</button>
-    <button class="btn" onclick="press('8')">8</button>
-    <button class="btn" onclick="press('9')">9</button><br>
-    <button class="btn" onclick="clearDisplay()">C</button>
-    <button class="btn" onclick="press('0')">0</button>
-    <button class="btn" onclick="checkPassword()">OK</button>
+  <input id="display" disabled>
+  <div class="keypad">
+    <button onclick="press(1)">1</button>
+    <button onclick="press(2)">2</button>
+    <button onclick="press(3)">3</button>
+    <button onclick="press(4)">4</button>
+    <button onclick="press(5)">5</button>
+    <button onclick="press(6)">6</button>
+    <button onclick="press(7)">7</button>
+    <button onclick="press(8)">8</button>
+    <button onclick="press(9)">9</button>
+    <button onclick="clearDisplay()">C</button>
+    <button onclick="press(0)">0</button>
+    <button onclick="checkPassword()">✔</button>
   </div>
 </div>
 
-<!-- CAMERA -->
 <div id="cameraContainer">
-  <video id="video" autoplay playsinline muted></video>
+  <video id="video" autoplay playsinline></video>
+  <img id="overlayImage">
 </div>
 
-<img id="overlayImage">
-
-<!-- CONTROLS -->
 <div id="controls">
+  <button id="photoBtn">📷</button>
+  <input id="opacitySlider" type="range" min="0" max="1" step="0.01" value="1">
   <input id="zoomSlider" type="range">
-  <input id="opacitySlider" type="range" min="0.1" max="1" step="0.01">
-  <button id="photoBtn">Choose Photo</button>
-  <button id="linkZoomBtn">Link Zoom</button>
+  <button id="linkZoomBtn">Link</button>
 </div>
 
 <script>
-/* ---------- DOM ---------- */
-const lockScreen=lockScreenEl=document.getElementById("lockScreen");
-const display=document.getElementById("display");
-const cameraContainer=document.getElementById("cameraContainer");
-const controls=document.getElementById("controls");
+const PASSWORD="3490";
+let input="";
+
+function press(n){ input+=n; display.value=input }
+function clearDisplay(){ input=""; display.value="" }
+function checkPassword(){
+  if(input===PASSWORD){
+    lockScreen.style.display="none";
+    cameraContainer.style.display="block";
+    controls.style.display="flex";
+    startCamera();
+    restoreState();
+  } else { alert("Wrong"); clearDisplay(); }
+}
+
 const video=document.getElementById("video");
 const overlay=document.getElementById("overlayImage");
 const zoomSlider=document.getElementById("zoomSlider");
@@ -131,138 +148,138 @@ const opacitySlider=document.getElementById("opacitySlider");
 const photoBtn=document.getElementById("photoBtn");
 const linkZoomBtn=document.getElementById("linkZoomBtn");
 
-/* ---------- LOCK ---------- */
-const PASSWORD="3490"; let input="";
-function press(n){input+=n;display.value=input}
-function clearDisplay(){input="";display.value=""}
-function checkPassword(){
-  if(input===PASSWORD){
-    lockScreen.style.display="none";
-    cameraContainer.style.display="block";
-    controls.style.display="flex";
-    startCamera();
-  }else{alert("Wrong password");clearDisplay()}
-}
-
-/* ---------- STATE ---------- */
 let x=0,y=0,scale=1,rot=0;
 let tx=0,ty=0,ts=1,tr=0;
-let lastTouch=null,startDist=0,startAng=0;
-let videoTrack=null,supportsZoom=false,linkZoom=false;
-let camMin=1,camMax=1;
+let lastTouch=null,startDist=0,startAngle=0;
 
-/* ---------- MEMORY ---------- */
-function saveState(){
-  localStorage.setItem("overlayState",JSON.stringify({
-    x:tx,y:ty,scale:ts,rot:tr,
-    opacity:overlay.style.opacity||1,
-    img:overlay.src
-  }));
-}
-function loadState(){
-  const s=JSON.parse(localStorage.getItem("overlayState"));
-  if(!s)return;
-  tx=s.x;ty=s.y;ts=s.scale;tr=s.rot;
-  overlay.style.opacity=s.opacity;
-  overlay.src=s.img;
-  overlay.style.display="block";
-}
+let linkZoom=false;
+let track,cap,camMin,camMax;
+let baseCamZoom=1,baseScale=1;
 
-/* ---------- SMOOTH ---------- */
-const lerp=(a,b,t)=>a+(b-a)*t;
-(function animate(){
-  x=lerp(x,tx,.15);y=lerp(y,ty,.15);
-  scale=lerp(scale,ts,.15);
-  rot=lerp(rot,tr,.15);
+function lerp(a,b){ return a+(b-a)*.15 }
+
+function animate(){
+  x=lerp(x,tx); y=lerp(y,ty);
+  scale=lerp(scale,ts);
+  rot=lerp(rot,tr);
   overlay.style.transform=
-    `translate(-50%,-50%) translate(${x}px,${y}px)
-     scale(${scale}) rotate(${rot}deg)`;
+    `translate(-50%,-50%) translate(${x}px,${y}px) scale(${scale}) rotate(${rot}deg)`;
   requestAnimationFrame(animate);
-})();
+}
+animate();
 
-/* ---------- CAMERA ---------- */
 async function startCamera(){
   const stream=await navigator.mediaDevices.getUserMedia({
     video:{facingMode:{exact:"environment"}}
   });
   video.srcObject=stream;
-  videoTrack=stream.getVideoTracks()[0];
-  const cap=videoTrack.getCapabilities();
-  if(cap.zoom){
-    supportsZoom=true;
-    camMin=cap.zoom.min;camMax=cap.zoom.max;
-    zoomSlider.min=camMin;
-    zoomSlider.max=camMax;
-    zoomSlider.step=cap.zoom.step;
-    zoomSlider.value=camMin;
-    zoomSlider.oninput=()=>{
-      videoTrack.applyConstraints({advanced:[{zoom:+zoomSlider.value}]});
-    };
-  }
-  loadState();
-}
+  track=stream.getVideoTracks()[0];
+  cap=track.getCapabilities();
+  const settings=track.getSettings();
 
-/* ---------- CONTROLS ---------- */
-opacitySlider.oninput=()=>{
-  overlay.style.opacity=opacitySlider.value;
-  saveState();
-};
+  camMin=cap.zoom.min;
+  camMax=cap.zoom.max;
+
+  zoomSlider.min=camMin;
+  zoomSlider.max=camMax;
+  zoomSlider.step=cap.zoom.step;
+
+  // 🔑 CRITICAL FIX: sync slider to ACTUAL camera zoom
+  zoomSlider.value=settings.zoom ?? camMin;
+  baseCamZoom=parseFloat(zoomSlider.value);
+
+  zoomSlider.oninput=()=>{
+    const z=parseFloat(zoomSlider.value);
+    track.applyConstraints({advanced:[{zoom:z}]});
+    saveState();
+  };
+}
 
 photoBtn.onclick=()=>{
   const i=document.createElement("input");
-  i.type="file";i.accept="image/*";
+  i.type="file"; i.accept="image/*";
   i.onchange=e=>{
     overlay.src=URL.createObjectURL(e.target.files[0]);
     overlay.style.display="block";
-    tx=ty=0;ts=1;tr=0;
+    ts=scale=1; tr=rot=0; tx=x=0; ty=y=0;
     saveState();
   };
   i.click();
 };
 
-linkZoomBtn.onclick=()=>{
-  linkZoom=!linkZoom;
-  linkZoomBtn.textContent=linkZoom?"Unlink Zoom":"Link Zoom";
+opacitySlider.oninput=()=>{
+  overlay.style.opacity=opacitySlider.value;
+  saveState();
 };
 
-/* ---------- TOUCH ---------- */
+linkZoomBtn.onclick=()=>{
+  linkZoom=!linkZoom;
+  linkZoomBtn.textContent=linkZoom?"Unlink":"Link";
+};
+
 overlay.addEventListener("touchstart",e=>{
-  if(e.touches.length===1)lastTouch=e.touches[0];
+  if(e.touches.length===1) lastTouch=e.touches[0];
   if(e.touches.length===2){
-    const[a,b]=e.touches;
+    const [a,b]=e.touches;
     startDist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-    startAng=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
+    startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
+    if(linkZoom){
+      baseCamZoom=parseFloat(zoomSlider.value);
+      baseScale=ts;
+    }
   }
 });
 
 overlay.addEventListener("touchmove",e=>{
   e.preventDefault();
+
   if(e.touches.length===1 && lastTouch && !linkZoom){
     tx+=e.touches[0].clientX-lastTouch.clientX;
     ty+=e.touches[0].clientY-lastTouch.clientY;
     lastTouch=e.touches[0];
-    saveState();
   }
+
   if(e.touches.length===2){
-    const[a,b]=e.touches;
+    const [a,b]=e.touches;
     const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-    let next=ts*(d/startDist);
+    const factor=d/startDist;
 
-    if(linkZoom && supportsZoom){
-      next=Math.max(camMin,Math.min(next,camMax));
-      videoTrack.applyConstraints({advanced:[{zoom:next}]});
-      zoomSlider.value=next;
-    }else{
+    if(linkZoom){
+      let newZoom=baseCamZoom*factor;
+      newZoom=Math.max(camMin,Math.min(newZoom,camMax));
+      track.applyConstraints({advanced:[{zoom:newZoom}]});
+      zoomSlider.value=newZoom;
+      ts=baseScale*(newZoom/baseCamZoom);
+    } else {
+      ts=Math.max(.1,Math.min(ts*factor,10));
       const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
-      tr+= (ang-startAng)*180/Math.PI;
-      startAng=ang;
+      tr+=(ang-startAngle)*180/Math.PI;
+      startAngle=ang;
     }
-
-    ts=next;
     startDist=d;
-    saveState();
   }
 },{passive:false});
+
+function saveState(){
+  localStorage.setItem("overlayState",JSON.stringify({
+    x,y,scale,rot,
+    opacity:overlay.style.opacity,
+    zoom:zoomSlider.value,
+    img:overlay.src
+  }));
+}
+
+function restoreState(){
+  const s=JSON.parse(localStorage.getItem("overlayState")||"null");
+  if(!s) return;
+  x=tx=s.x; y=ty=s.y;
+  scale=ts=s.scale; rot=tr=s.rot;
+  overlay.style.opacity=s.opacity;
+  zoomSlider.value=s.zoom;
+  overlay.src=s.img;
+  overlay.style.display=s.img?"block":"none";
+  track?.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
+}
 </script>
 </body>
 </html>
