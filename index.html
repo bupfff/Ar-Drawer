@@ -1,130 +1,192 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
-<title>Camera Overlay</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera App with Lock</title>
 <style>
-html,body{
-  margin:0;
-  padding:0;
-  background:black;
-  height:100%;
-  overflow:hidden;
-  touch-action:none;
-  font-family:sans-serif;
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: black;
+  touch-action: none;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: white;
 }
 
-#lockScreen{
-  position:fixed;
-  inset:0;
-  background:black;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
+#lockScreen {
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at center, #111 0%, #000 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
 
-#display{
-  width:160px;
-  font-size:24px;
-  text-align:center;
-  margin-bottom:10px;
+#display {
+  font-size: 2em;
+  background: rgba(30,30,30,0.8);
+  color: #fff;
+  border: 2px solid #fff;
+  padding: 10px;
+  text-align: center;
+  border-radius: 10px;
+  width: 220px;
+  margin-bottom: 20px;
+  box-shadow: 0 0 10px #fff8;
 }
 
-.keypad{
-  display:grid;
-  grid-template-columns:repeat(3,60px);
-  gap:10px;
+.btn {
+  width: 60px;
+  height: 60px;
+  margin: 5px;
+  font-size: 1.5em;
+  background: linear-gradient(to bottom, #222, #111);
+  color: white;
+  border: 1px solid #444;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  transition: all 0.2s ease;
 }
 
-.keypad button{
-  font-size:20px;
-  padding:10px;
+.btn:hover {
+  background: linear-gradient(to bottom, #333, #222);
+  box-shadow: 0 0 10px #fff8;
+  transform: translateY(-2px);
 }
 
-#cameraContainer{
-  position:fixed;
-  inset:0;
-  display:none;
+.btn:active {
+  background: linear-gradient(to bottom, #111, #000);
+  transform: translateY(1px);
+  box-shadow: 0 0 5px #fff4 inset;
 }
 
-video{
-  position:absolute;
-  width:100%;
-  height:100%;
-  object-fit:cover;
+#keypad div {
+  display: flex;
+  justify-content: center;
 }
 
-#overlayImage{
-  position:absolute;
-  top:50%;
-  left:50%;
-  transform-origin:center center;
-  display:none;
-  touch-action:none;
+#cameraContainer {
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  display: none;
 }
 
-#controls{
-  position:fixed;
-  bottom:10px;
-  left:50%;
-  transform:translateX(-50%);
-  display:none;
-  flex-direction:row;
-  align-items:center;
-  gap:6px;
-  z-index:10;
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-#controls button{
-  background:rgba(0,0,0,.6);
-  color:white;
-  border:none;
-  border-radius:8px;
-  padding:6px 8px;
-  font-size:14px;
+#overlayImage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  max-width: 80%;
+  max-height: 80%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  touch-action: none;
+  display: none;
+  transition: transform 0.05s ease;
 }
 
-#controls input[type=range]{
-  width:90px;
+#controls {
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: none;
+  gap: 10px;
+  align-items: center;
+  flex-direction: row;
+}
+
+#controls button {
+  background: linear-gradient(to bottom, #444, #222);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+}
+
+#controls button:hover {
+  background: linear-gradient(to bottom, #666, #333);
+  box-shadow: 0 0 10px #fff8;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100px;
+  height: 6px;
+  background: #333;
+  border-radius: 5px;
+  outline: none;
+  transition: 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 18px;
+  width: 18px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 10px #fff8;
+  transition: 0.2s ease;
+  margin-top: -6px;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 15px #fff9;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: #222;
+  border-radius: 5px;
 }
 </style>
 </head>
 <body>
 
 <div id="lockScreen">
-  <input id="display" disabled>
-  <div class="keypad">
-    <button onclick="press(1)">1</button>
-    <button onclick="press(2)">2</button>
-    <button onclick="press(3)">3</button>
-    <button onclick="press(4)">4</button>
-    <button onclick="press(5)">5</button>
-    <button onclick="press(6)">6</button>
-    <button onclick="press(7)">7</button>
-    <button onclick="press(8)">8</button>
-    <button onclick="press(9)">9</button>
-    <button onclick="clearDisplay()">C</button>
-    <button onclick="press(0)">0</button>
-    <button onclick="checkPassword()">✔</button>
+  <h2>Enter Password</h2>
+  <input type="password" id="display" readonly>
+  <div id="keypad">
+    <div><button class="btn" onclick="press('1')">1</button><button class="btn" onclick="press('2')">2</button><button class="btn" onclick="press('3')">3</button></div>
+    <div><button class="btn" onclick="press('4')">4</button><button class="btn" onclick="press('5')">5</button><button class="btn" onclick="press('6')">6</button></div>
+    <div><button class="btn" onclick="press('7')">7</button><button class="btn" onclick="press('8')">8</button><button class="btn" onclick="press('9')">9</button></div>
+    <div><button class="btn" onclick="clearDisplay()">C</button><button class="btn" onclick="press('0')">0</button><button class="btn" onclick="checkPassword()">OK</button></div>
   </div>
 </div>
 
 <div id="cameraContainer">
-  <video id="video" autoplay playsinline></video>
-  <img id="overlayImage">
+  <video id="video" autoplay playsinline muted></video>
 </div>
+<img id="overlayImage" />
 
 <div id="controls">
-  <button id="photoBtn">📷</button>
-  <input id="opacitySlider" type="range" min="0" max="1" step="0.01" value="1">
-  <input id="zoomSlider" type="range">
-  <button id="linkZoomBtn">Link</button>
+  <input id="zoomSlider" type="range" min="1" max="3" step="0.01" value="1">
+  <input id="opacitySlider" type="range" min="0.1" max="1" step="0.01" value="1">
+  <button id="photoBtn">Photo</button>
+  <button id="linkZoomBtn">Link Zoom</button>
 </div>
 
 <script>
-/* ---------- LOCK ---------- */
 const PASSWORD="3490";
 let input="";
 function press(n){ input+=n; display.value=input }
@@ -136,10 +198,10 @@ function checkPassword(){
     controls.style.display="flex";
     startCamera();
     restoreState();
-  } else { clearDisplay(); }
+  } else { clearDisplay(); alert("Wrong password"); }
 }
 
-/* ---------- ELEMENTS ---------- */
+/* ELEMENTS */
 const video=document.getElementById("video");
 const overlay=document.getElementById("overlayImage");
 const zoomSlider=document.getElementById("zoomSlider");
@@ -147,16 +209,15 @@ const opacitySlider=document.getElementById("opacitySlider");
 const photoBtn=document.getElementById("photoBtn");
 const linkZoomBtn=document.getElementById("linkZoomBtn");
 
-/* ---------- STATE ---------- */
-let x=0,y=0,scale=1,rot=0;
-let tx=0,ty=0,ts=1,tr=0;
+/* STATE */
+let tx=0,ty=0,ts=1,tr=0; // target
+let x=0,y=0,scale=1,rot=0; // smooth
 let lastTouch=null,startDist=0,startAngle=0;
 let linkZoom=false;
-let track,cap,camMin,camMax;
-let baseCamZoom=1,baseScale=1;
+let track,cap,camMin=1,camMax=3,baseCamZoom=1,baseScale=1;
 
-/* ---------- SMOOTHING ---------- */
-function lerp(a,b){ return a+(b-a)*.18 }
+/* SMOOTH ANIMATION */
+function lerp(a,b){ return a+(b-a)*0.2 }
 function animate(){
   x=lerp(x,tx); y=lerp(y,ty);
   scale=lerp(scale,ts); rot=lerp(rot,tr);
@@ -165,61 +226,54 @@ function animate(){
 }
 animate();
 
-/* ---------- CAMERA ---------- */
+/* CAMERA */
 async function startCamera(){
-  const stream=await navigator.mediaDevices.getUserMedia({
-    video:{facingMode:{exact:"environment"}}
-  });
-  video.srcObject=stream;
-  track=stream.getVideoTracks()[0];
-  cap=track.getCapabilities();
-  const settings=track.getSettings();
-
-  camMin=cap.zoom.min;
-  camMax=cap.zoom.max;
-
-  zoomSlider.min=camMin;
-  zoomSlider.max=camMax;
-  zoomSlider.step=cap.zoom.step;
-  zoomSlider.value=settings.zoom ?? camMin;
-
-  track.applyConstraints({advanced:[{zoom:zoomSlider.value}]});
-
-  zoomSlider.oninput=()=>{
-    const z=parseFloat(zoomSlider.value);
-    track.applyConstraints({advanced:[{zoom:z}]});
-    saveState();
-  };
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:"environment"}}});
+    video.srcObject=stream;
+    track=stream.getVideoTracks()[0];
+    cap=track.getCapabilities();
+    if(cap.zoom){
+      camMin=cap.zoom.min; camMax=cap.zoom.max;
+      zoomSlider.min=camMin; zoomSlider.max=camMax; zoomSlider.step=cap.zoom.step;
+      zoomSlider.value=track.getSettings().zoom||camMin;
+      track.applyConstraints({advanced:[{zoom:zoomSlider.value}]});
+    } else {
+      zoomSlider.min=0.5; zoomSlider.max=3; zoomSlider.step=0.01; zoomSlider.value=1;
+    }
+  } catch(e){ alert("Cannot access rear camera."); console.error(e); }
 }
 
-/* ---------- IMAGE PICKER ---------- */
-photoBtn.onclick=()=>{
-  const input=document.createElement("input");
-  input.type="file";
-  input.accept="image/*";
-  input.onchange=e=>{
-    const file=e.target.files[0];
-    if(!file) return;
-    overlay.src=URL.createObjectURL(file);
-    overlay.style.display="block";
-    ts=scale=1; tr=rot=0; tx=x=0; ty=y=0;
-    saveState();
-  };
-  input.click();
-};
-
-/* ---------- UI ---------- */
-opacitySlider.oninput=()=>{
-  overlay.style.opacity=opacitySlider.value;
+/* SLIDERS */
+opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; saveState(); };
+zoomSlider.oninput=()=>{
+  const z=parseFloat(zoomSlider.value);
+  if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:z}]});
   saveState();
 };
 
+/* LINK ZOOM */
 linkZoomBtn.onclick=()=>{
   linkZoom=!linkZoom;
   linkZoomBtn.textContent=linkZoom?"Unlink":"Link";
 };
 
-/* ---------- TOUCH ---------- */
+/* PHOTO PICKER */
+photoBtn.onclick=()=>{
+  const input=document.createElement("input");
+  input.type="file"; input.accept="image/*";
+  input.onchange=e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+    overlay.src=URL.createObjectURL(file);
+    overlay.style.display="block";
+    tx=ty=0; ts=scale=1; tr=rot=0;
+    saveState();
+  };
+  input.click();
+};
+
+/* TOUCH */
 overlay.addEventListener("touchstart",e=>{
   if(e.touches.length===1) lastTouch=e.touches[0];
   if(e.touches.length===2){
@@ -242,41 +296,39 @@ overlay.addEventListener("touchmove",e=>{
     const [a,b]=e.touches;
     const d=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
     const factor=d/startDist;
-
     if(linkZoom){
       let newZoom=baseCamZoom*factor;
       newZoom=Math.max(camMin,Math.min(newZoom,camMax));
-      track.applyConstraints({advanced:[{zoom:newZoom}]});
+      if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:newZoom}]});
       zoomSlider.value=newZoom;
-      ts=baseScale*(newZoom/baseCamZoom || 1);
+      ts=baseScale*(newZoom/baseCamZoom);
     } else {
-      ts=Math.max(.1,Math.min(ts*factor,10));
+      ts=Math.max(0.1,Math.min(ts*factor,10));
       const ang=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
-      tr+=(ang-startAngle)*180/Math.PI;
+      tr+= (ang-startAngle)*(180/Math.PI);
       startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX);
     }
     startDist=d;
   }
 },{passive:false});
 
-/* ---------- DOUBLE-TAP RESET ---------- */
+/* DOUBLE TAP RESET */
 let lastTap=0;
 overlay.addEventListener("touchend",()=>{
   const now=Date.now();
   if(now-lastTap<300){
-    // reset all
     tx=ty=0; ts=scale=1; tr=rot=0;
     zoomSlider.value=camMin;
-    track?.applyConstraints({advanced:[{zoom:camMin}]});
+    if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]});
     saveState();
   }
   lastTap=now;
 });
 
-/* ---------- MEMORY ---------- */
+/* MEMORY */
 function saveState(){
   localStorage.setItem("overlayState",JSON.stringify({
-    x,y,scale,rot,
+    x:tx,y:ty,scale:ts,rot:tr,
     opacity:overlay.style.opacity,
     zoom:zoomSlider.value,
     img:overlay.src
@@ -286,13 +338,12 @@ function saveState(){
 function restoreState(){
   const s=JSON.parse(localStorage.getItem("overlayState")||"null");
   if(!s) return;
-  x=tx=s.x; y=ty=s.y;
-  scale=ts=s.scale; rot=tr=s.rot;
+  tx=s.x; ty=s.y; ts=s.scale; tr=s.rot;
   overlay.style.opacity=s.opacity;
   overlay.src=s.img;
   overlay.style.display=s.img?"block":"none";
   zoomSlider.value=s.zoom;
-  track?.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
+  if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
 }
 </script>
 </body>
