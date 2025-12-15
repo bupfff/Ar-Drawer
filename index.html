@@ -62,7 +62,6 @@ function checkPassword(){
     cameraContainer.style.display="block";
     controls.style.display="flex";
     startCamera();
-    restoreState();
   } else { clearDisplay(); alert("Wrong password"); }
 }
 
@@ -113,7 +112,7 @@ async function startCamera(){
 }
 
 /* Sliders */
-opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; saveState(); };
+opacitySlider.oninput=()=>{ overlay.style.opacity=opacitySlider.value; };
 zoomSlider.oninput=()=>{
   const z=parseFloat(zoomSlider.value);
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:z}]});
@@ -139,7 +138,6 @@ photoBtn.onclick=()=>{
     const url=URL.createObjectURL(file);
     overlay.src=url; overlay.style.display="block";
     tx=ty=0; ts=scale=1; tr=rot=0; overlay.style.opacity=1; opacitySlider.value=1;
-    saveState();
   };
   input.click();
 };
@@ -149,7 +147,6 @@ resetBtn.onclick=()=>{
   tx=ty=0; ts=scale=1; tr=rot=0; overlay.style.opacity=1; opacitySlider.value=1;
   if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:camMin}]});
   zoomSlider.value=camMin;
-  saveState();
 };
 
 /* Touch */
@@ -183,7 +180,6 @@ overlay.addEventListener("touchmove",e=>{
       if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:newZoom}]});
       zoomSlider.value=newZoom;
       ts = baseScale*(newZoom/baseCamZoom);
-      // keep overlay centered under fingers
       tx=-centerX*(ts/baseScale-1);
       ty=-centerY*(ts/baseScale-1);
     } else {
@@ -195,24 +191,6 @@ overlay.addEventListener("touchmove",e=>{
     startDist=d;
   }
 },{passive:false});
-
-/* Memory */
-function saveState(){
-  if(!overlay.src) return;
-  localStorage.setItem("overlayState",JSON.stringify({
-    x:tx,y:ty,scale:ts,rot:tr,opacity:overlay.style.opacity,
-    zoom:zoomSlider.value,img:overlay.src
-  }));
-}
-function restoreState(){
-  const s=JSON.parse(localStorage.getItem("overlayState")||"null");
-  if(!s || !s.img) return;
-  overlay.src=s.img; overlay.style.display="block";
-  tx=s.x; ty=s.y; ts=s.scale; tr=s.rot;
-  overlay.style.opacity=s.opacity;
-  zoomSlider.value=s.zoom;
-  if(track?.applyConstraints) track.applyConstraints({advanced:[{zoom:parseFloat(s.zoom)}]});
-}
 </script>
 </body>
 </html>
