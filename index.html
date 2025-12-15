@@ -1,135 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Camera App with Lock</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background: black;
-      touch-action: none;
-      font-family: system-ui, sans-serif;
-      color: white;
-    }
-
-    #lockScreen {
-      position: fixed;
-      inset: 0;
-      background: radial-gradient(circle at center, #111 0%, #000 100%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-
-    #display {
-      font-size: 2em;
-      background: rgba(30,30,30,.8);
-      border: 2px solid #fff;
-      padding: 10px;
-      width: 220px;
-      border-radius: 10px;
-      text-align: center;
-      margin-bottom: 20px;
-    }
-
-    .btn {
-      width: 60px;
-      height: 60px;
-      margin: 5px;
-      font-size: 1.4em;
-      background: #222;
-      color: white;
-      border-radius: 12px;
-      border: 1px solid #444;
-    }
-
-    #cameraContainer {
-      position: fixed;
-      inset: 0;
-      display: none;
-    }
-
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    #overlayImage {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      max-width: 80%;
-      max-height: 80%;
-      transform: translate(-50%, -50%);
-      touch-action: none;
-      display: none;
-      z-index: 5;
-    }
-
-    #controls {
-      position: fixed;
-      bottom: 15px;
-      left: 15px;
-      display: none;
-      gap: 10px;
-      background: rgba(0,0,0,.6);
-      padding: 10px;
-      border-radius: 15px;
-      z-index: 10;
-    }
-
-    #controls button {
-      background: #333;
-      color: white;
-      border-radius: 10px;
-      padding: 6px 10px;
-      border: none;
-    }
-
-    input[type="range"] {
-      width: 100px;
-    }
-  </style>
-</head>
-<body>
-
-<div id="lockScreen">
-  <h2>Enter Password</h2>
-  <input type="password" id="display" readonly>
-  <div>
-    <button class="btn" onclick="press('1')">1</button>
-    <button class="btn" onclick="press('2')">2</button>
-    <button class="btn" onclick="press('3')">3</button><br>
-    <button class="btn" onclick="press('4')">4</button>
-    <button class="btn" onclick="press('5')">5</button>
-    <button class="btn" onclick="press('6')">6</button><br>
-    <button class="btn" onclick="press('7')">7</button>
-    <button class="btn" onclick="press('8')">8</button>
-    <button class="btn" onclick="press('9')">9</button><br>
-    <button class="btn" onclick="clearDisplay()">C</button>
-    <button class="btn" onclick="press('0')">0</button>
-    <button class="btn" onclick="checkPassword()">OK</button>
-  </div>
-</div>
-
-<div id="cameraContainer">
-  <video id="video" autoplay playsinline muted></video>
-</div>
-
-<img id="overlayImage">
-
-<div id="controls">
-  <input id="zoomSlider" type="range" min="0.3" max="3" step="0.01" value="1">
-  <input id="opacitySlider" type="range" min="0.1" max="1" step="0.01" value="1">
-  <button id="photoBtn">Choose Photo</button>
-  <button id="linkZoomBtn">Link Zoom</button>
-</div>
-
 <script>
 const PASSWORD = "3490";
 let input = "";
@@ -154,8 +22,8 @@ const linkZoomBtn = document.getElementById("linkZoomBtn");
 
 let originX=0, originY=0, scale=1, rotation=0;
 let targetX=0, targetY=0, targetScale=1, targetRotation=0;
-let startDistance=0, startAngle=0, lastTouch=null;
 
+let startDistance=0, startAngle=0, lastTouch=null;
 let videoTrack=null, supportsRealZoom=false;
 let linkZoom=false;
 
@@ -163,8 +31,10 @@ function lerp(a,b,t){ return a+(b-a)*t }
 
 function applyTransform(){
   overlay.style.transform =
-    `translate(-50%, -50%) translate(${originX}px, ${originY}px)
-     scale(${scale}) rotate(${rotation}deg)`;
+    `translate(-50%, -50%)
+     translate(${originX}px, ${originY}px)
+     scale(${scale})
+     rotate(${rotation}deg)`;
 }
 
 function animate(){
@@ -184,11 +54,20 @@ async function startCamera(){
   video.srcObject=stream;
   videoTrack=stream.getVideoTracks()[0];
   const cap=videoTrack.getCapabilities();
+  const settings=videoTrack.getSettings();
+
   if(cap.zoom){
     supportsRealZoom=true;
     zoomSlider.min=cap.zoom.min;
     zoomSlider.max=cap.zoom.max;
     zoomSlider.step=cap.zoom.step;
+    zoomSlider.value=settings.zoom || cap.zoom.min;
+
+    zoomSlider.oninput=()=>{
+      videoTrack.applyConstraints({
+        advanced:[{zoom:parseFloat(zoomSlider.value)}]
+      });
+    };
   }
 }
 
@@ -198,7 +77,9 @@ photoBtn.onclick=()=>{
   i.onchange=e=>{
     overlay.src=URL.createObjectURL(e.target.files[0]);
     overlay.style.display="block";
-    targetX=targetY=0; targetScale=1; targetRotation=0;
+    targetX=targetY=0;
+    targetScale=1;
+    targetRotation=0;
   };
   i.click();
 };
@@ -210,39 +91,64 @@ linkZoomBtn.onclick=()=>{
   linkZoomBtn.textContent=linkZoom?"Unlink Zoom":"Link Zoom";
 };
 
+/* ------------------ TOUCH HANDLING ------------------ */
+
 overlay.addEventListener("touchstart",e=>{
-  if(e.touches.length===1) lastTouch=e.touches[0];
+  if(e.touches.length===1){
+    lastTouch=e.touches[0];
+  }
   if(e.touches.length===2){
     const [a,b]=e.touches;
     startDistance=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-    startAngle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX)*180/Math.PI;
+    startAngle=Math.atan2(
+      a.clientY-b.clientY,
+      a.clientX-b.clientX
+    )*180/Math.PI;
   }
 });
 
 overlay.addEventListener("touchmove",e=>{
   e.preventDefault();
-  if(e.touches.length===1 && lastTouch){
+
+  /* DRAG — only when NOT linked */
+  if(e.touches.length===1 && lastTouch && !linkZoom){
     targetX+=e.touches[0].clientX-lastTouch.clientX;
     targetY+=e.touches[0].clientY-lastTouch.clientY;
     lastTouch=e.touches[0];
   }
+
+  /* PINCH */
   if(e.touches.length===2){
     const [a,b]=e.touches;
     const dist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-    const angle=Math.atan2(a.clientY-b.clientY,a.clientX-b.clientX)*180/Math.PI;
     const factor=dist/startDistance;
-    targetScale=Math.max(.1,Math.min(targetScale*factor,10));
-    targetRotation+=angle-startAngle;
-    startDistance=dist; startAngle=angle;
 
+    /* SCALE — always allowed */
+    targetScale=Math.max(0.1,Math.min(targetScale*factor,10));
+
+    /* ROTATION — only when NOT linked */
+    if(!linkZoom){
+      const angle=Math.atan2(
+        a.clientY-b.clientY,
+        a.clientX-b.clientX
+      )*180/Math.PI;
+      targetRotation+=angle-startAngle;
+      startAngle=angle;
+    }
+
+    /* CAMERA ZOOM — only when linked */
     if(linkZoom && supportsRealZoom){
-      const camZoom=Math.max(zoomSlider.min,Math.min(targetScale,zoomSlider.max));
-      videoTrack.applyConstraints({advanced:[{zoom:camZoom}]});
+      const camZoom=Math.max(
+        zoomSlider.min,
+        Math.min(targetScale,zoomSlider.max)
+      );
+      videoTrack.applyConstraints({
+        advanced:[{zoom:camZoom}]
+      });
       zoomSlider.value=camZoom;
     }
+
+    startDistance=dist;
   }
 },{passive:false});
 </script>
-
-</body>
-</html>
