@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Camera App with Lock</title>
+  <title>AR Drawer</title>
   <style>
     html, body {
       margin: 0;
@@ -12,70 +13,29 @@
       touch-action: none;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       color: white;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
 
-    #lockScreen {
+    /* The camera feed and the stencil live together on the stage, so detail zoom
+       magnifies both by exactly the same amount and they stay lined up. */
+    #stage {
       position: fixed;
-      width: 100vw;
-      height: 100vh;
-      background: radial-gradient(circle at center, #111 0%, #000 100%);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-
-    #display {
-      font-size: 2em;
-      background: rgba(30, 30, 30, 0.8);
-      color: #fff; /* changed from #0f0 to white */
-      border: 2px solid #fff; /* changed from #0f0 to white */
-      padding: 10px;
-      text-align: center;
-      border-radius: 10px;
-      width: 220px;
-      margin-bottom: 20px;
-      box-shadow: 0 0 10px #fff8; /* changed shadow to white */
-    }
-
-    .btn {
-      width: 60px;
-      height: 60px;
-      margin: 5px;
-      font-size: 1.5em;
-      background: linear-gradient(to bottom, #222, #111);
-      color: white;
-      border: 1px solid #444;
-      border-radius: 12px;
-      cursor: pointer;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-      transition: all 0.2s ease;
-    }
-
-    .btn:hover {
-      background: linear-gradient(to bottom, #333, #222);
-      box-shadow: 0 0 10px #fff8; /* white glow instead of green */
-      transform: translateY(-2px);
-    }
-
-    .btn:active {
-      background: linear-gradient(to bottom, #111, #000);
-      transform: translateY(1px);
-      box-shadow: 0 0 5px #fff4 inset; /* white inset shadow */
-    }
-
-    #cameraContainer {
-      position: fixed;
-      width: 100vw;
-      height: 100vh;
       top: 0;
       left: 0;
-      z-index: 0;
-      display: none;
+      width: 100%;
+      height: 100%;
+      transform-origin: 0 0;
+      will-change: transform;
+    }
+
+    #stage.animate {
+      transition: transform 0.25s ease-out;
     }
 
     video {
+      display: block;
       width: 100%;
       height: 100%;
       object-fit: cover;
@@ -91,17 +51,61 @@
       z-index: 5;
       touch-action: none;
       display: none;
-      transition: transform 0.2s ease;
+      -webkit-user-drag: none;
+    }
+
+    #zoomBadge {
+      position: fixed;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 14px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+      cursor: pointer;
+    }
+
+    #zoomBadge[hidden] {
+      display: none;
+    }
+
+    #toast {
+      position: fixed;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+      max-width: calc(100% - 60px);
+      background: rgba(0, 0, 0, 0.75);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    #toast.show {
+      opacity: 1;
     }
 
     #controls {
       position: fixed;
       bottom: 15px;
       left: 15px;
+      right: 15px;
       z-index: 10;
-      display: none;
-      gap: 10px;
-      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      align-items: flex-end;
+      justify-content: center;
       background: rgba(0, 0, 0, 0.6);
       padding: 10px 15px;
       border-radius: 15px;
@@ -124,6 +128,23 @@
     #controls button:hover {
       background: linear-gradient(to bottom, #666, #333);
       box-shadow: 0 0 10px #fff8; /* white glow on hover */
+    }
+
+    #controls button.on {
+      background: #fff;
+      color: #000;
+    }
+
+    .ctl {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: #ccc;
+    }
+
+    .ctl:has(input:disabled) {
+      opacity: 0.4;
     }
 
     input[type="range"] {
@@ -162,244 +183,531 @@
 </head>
 <body>
 
-  <!-- Lock Screen -->
-  <div id="lockScreen">
-    <h2>Enter Password</h2>
-    <input type="password" id="display" readonly>
-    <div id="keypad">
-      <div>
-        <button class="btn" onclick="press('1')">1</button>
-        <button class="btn" onclick="press('2')">2</button>
-        <button class="btn" onclick="press('3')">3</button>
-      </div>
-      <div>
-        <button class="btn" onclick="press('4')">4</button>
-        <button class="btn" onclick="press('5')">5</button>
-        <button class="btn" onclick="press('6')">6</button>
-      </div>
-      <div>
-        <button class="btn" onclick="press('7')">7</button>
-        <button class="btn" onclick="press('8')">8</button>
-        <button class="btn" onclick="press('9')">9</button>
-      </div>
-      <div>
-        <button class="btn" onclick="clearDisplay()">C</button>
-        <button class="btn" onclick="press('0')">0</button>
-        <button class="btn" onclick="checkPassword()">OK</button>
-      </div>
-    </div>
+  <div id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="overlayImage" alt="" />
   </div>
 
-  <!-- Camera Overlay App -->
-  <div id="cameraContainer">
-    <video id="video" autoplay playsinline muted></video>
-  </div>
-  <img id="overlayImage" />
+  <button id="zoomBadge" hidden></button>
+  <div id="toast"></div>
 
   <div id="controls">
-    <input id="zoomSlider" type="range" min="0.3" max="3" step="0.01" value="1">
-    <input id="opacitySlider" type="range" min="0.1" max="1" step="0.01" value="1">
+    <label class="ctl"><span>Size</span>
+      <input id="sizeSlider" type="range" min="-2.3026" max="2.3026" step="0.001" value="0">
+    </label>
+    <label class="ctl"><span>Opacity</span>
+      <input id="opacitySlider" type="range" min="0.05" max="1" step="0.01" value="0.5">
+    </label>
+    <button id="lockBtn">🔓 Lock image</button>
     <button id="photoBtn">Choose Photo</button>
   </div>
 
   <script>
-    const PASSWORD = "3490";
-    let input = "";
-
-    function press(num) {
-      input += num;
-      document.getElementById("display").value = input;
-    }
-
-    function clearDisplay() {
-      input = "";
-      document.getElementById("display").value = "";
-    }
-
-    function checkPassword() {
-      if (input === PASSWORD) {
-        document.getElementById("lockScreen").style.display = "none";
-        document.getElementById("cameraContainer").style.display = "block";
-        document.getElementById("controls").style.display = "flex";
-        startCamera();
-      } else {
-        alert("❌ Wrong password");
-        clearDisplay();
-      }
-    }
-
+    const stage = document.getElementById("stage");
     const video = document.getElementById("video");
     const overlay = document.getElementById("overlayImage");
-    const zoomSlider = document.getElementById("zoomSlider");
+    const zoomBadge = document.getElementById("zoomBadge");
+    const toast = document.getElementById("toast");
+    const controls = document.getElementById("controls");
+    const sizeSlider = document.getElementById("sizeSlider");
     const opacitySlider = document.getElementById("opacitySlider");
+    const lockBtn = document.getElementById("lockBtn");
     const photoBtn = document.getElementById("photoBtn");
 
-    let lastTouch = null;
-    let scale = 1, startDistance = 0, rotation = 0, startAngle = 0;
-    let originX = 0, originY = 0;
-    let videoTrack = null;
-    let supportsRealZoom = false;
+    const MIN_SCALE = 0.1, MAX_SCALE = 10;
+    const MAX_VIEW_ZOOM = 8;
+    const DETAIL_ZOOM = 3;        // how far a double-tap zooms in when the image is locked
+    const TAP_SLOP = 10;          // px a finger can drift and still count as a tap / long-press
+    const DOUBLE_TAP_MS = 300;
+    const LONG_PRESS_MS = 1500;
+
+    // Stencil position/size/rotation, in stage coordinates
+    let originX = 0, originY = 0, scale = 1, rotation = 0;
+    // Detail zoom: the stage is drawn at screen = (viewX, viewY) + viewZoom * stagePoint
+    let viewX = 0, viewY = 0, viewZoom = 1;
+    let locked = false;
+    let overlayURL = null;
+
+    // ---------- Small helpers ----------
+
+    function num(value, fallback) {
+      const n = parseFloat(value);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function clampScale(s) {
+      return Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
+    }
+
+    function storageGet(key) {
+      try { return localStorage.getItem(key); } catch (e) { return null; }
+    }
+
+    function storageSet(key, value) {
+      try { localStorage.setItem(key, value); } catch (e) { console.warn("Could not save", key, e); }
+    }
+
+    let toastTimer = null;
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
+    }
+
+    // ---------- Stencil position / size / rotation ----------
 
     function applyTransform() {
       overlay.style.transform =
         `translate(-50%, -50%) translate(${originX}px, ${originY}px) scale(${scale}) rotate(${rotation}deg)`;
+      sizeSlider.value = Math.log(scale);
     }
 
-    const savedOverlay = localStorage.getItem("savedOverlay");
-    const savedPosition = JSON.parse(localStorage.getItem("savedPosition"));
-    const savedScale = localStorage.getItem("savedScale");
-    const savedRotation = localStorage.getItem("savedRotation");
-
-    if (savedOverlay) {
-      overlay.src = savedOverlay;
-      overlay.style.display = "block";
+    function saveTransform() {
+      storageSet("savedTransform", JSON.stringify({ x: originX, y: originY, scale, rotation }));
     }
 
-    if (savedPosition) {
-      originX = savedPosition.x;
-      originY = savedPosition.y;
-    }
-
-    if (savedScale) scale = savedScale;
-    if (savedRotation) rotation = savedRotation;
-
-    applyTransform();
-
-    async function startCamera() {
+    function loadTransform() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: "environment" } }
-        });
-        video.srcObject = stream;
-
-        videoTrack = stream.getVideoTracks()[0];
-        const capabilities = videoTrack.getCapabilities();
-        const settings = videoTrack.getSettings();
-
-        if (capabilities.zoom) {
-          supportsRealZoom = true;
-          zoomSlider.min = capabilities.zoom.min;
-          zoomSlider.max = capabilities.zoom.max;
-          zoomSlider.step = capabilities.zoom.step;
-          zoomSlider.value = settings.zoom || capabilities.zoom.min;
-
-          zoomSlider.addEventListener("input", () => {
-            videoTrack.applyConstraints({
-              advanced: [{ zoom: parseFloat(zoomSlider.value) }]
-            });
-          });
-        } else {
-          zoomSlider.addEventListener("input", () => {
-            scale = zoomSlider.value;
-            localStorage.setItem("savedScale", scale);
-            applyTransform();
-          });
+        const t = JSON.parse(storageGet("savedTransform"));
+        if (t) {
+          originX = num(t.x, 0);
+          originY = num(t.y, 0);
+          scale = clampScale(num(t.scale, 1));
+          rotation = num(t.rotation, 0);
+          return;
         }
+        // Older versions saved each value under its own key
+        const pos = JSON.parse(storageGet("savedPosition"));
+        if (pos) {
+          originX = num(pos.x, 0);
+          originY = num(pos.y, 0);
+        }
+        scale = clampScale(num(storageGet("savedScale"), 1));
+        rotation = num(storageGet("savedRotation"), 0);
       } catch (e) {
-        console.error("Camera error:", e);
-        alert("Could not access the rear camera.");
+        console.warn("Ignoring unreadable saved position:", e);
       }
     }
 
-    opacitySlider.addEventListener("input", () => {
-      overlay.style.opacity = opacitySlider.value;
+    function resetTransform() {
+      originX = 0;
+      originY = 0;
+      scale = 1;
+      rotation = 0;
+      applyTransform();
+      saveTransform();
+    }
+
+    sizeSlider.addEventListener("input", () => {
+      scale = clampScale(Math.exp(parseFloat(sizeSlider.value)));
+      applyTransform();
+    });
+    sizeSlider.addEventListener("change", saveTransform);
+
+    // ---------- Detail zoom (magnifies camera + stencil together) ----------
+
+    function clampView() {
+      viewZoom = Math.min(MAX_VIEW_ZOOM, Math.max(1, viewZoom));
+      // Keep the stage covering the whole screen, so you never see past its edges
+      const w = stage.offsetWidth, h = stage.offsetHeight;
+      viewX = Math.min(0, Math.max(w - w * viewZoom, viewX));
+      viewY = Math.min(0, Math.max(h - h * viewZoom, viewY));
+    }
+
+    function applyView(animate = false) {
+      clampView();
+      stage.classList.toggle("animate", animate);
+      stage.style.transform = `translate(${viewX}px, ${viewY}px) scale(${viewZoom})`;
+      const zoomed = viewZoom > 1.01;
+      zoomBadge.hidden = !zoomed;
+      zoomBadge.textContent = `${viewZoom.toFixed(1)}× · tap to zoom out`;
+    }
+
+    // Zoom so the stage point currently under screen point (x, y) stays under it
+    function zoomViewAround(newZoom, x, y, animate = false) {
+      const k = Math.min(MAX_VIEW_ZOOM, Math.max(1, newZoom)) / viewZoom;
+      viewX = x - k * (x - viewX);
+      viewY = y - k * (y - viewY);
+      viewZoom *= k;
+      applyView(animate);
+    }
+
+    function resetView() {
+      viewX = 0;
+      viewY = 0;
+      viewZoom = 1;
+      applyView(true);
+    }
+
+    stage.addEventListener("transitionend", () => stage.classList.remove("animate"));
+    zoomBadge.addEventListener("click", resetView);
+    window.addEventListener("resize", () => applyView());
+
+    // ---------- Lock ----------
+
+    function setLocked(value) {
+      locked = value;
+      lockBtn.textContent = locked ? "🔒 Image locked" : "🔓 Lock image";
+      lockBtn.classList.toggle("on", locked);
+      sizeSlider.disabled = locked;
+      storageSet("imageLocked", locked ? "1" : "0");
+    }
+
+    lockBtn.addEventListener("click", () => {
+      setLocked(!locked);
+      showToast(locked
+        ? "Image locked. Pinch or double-tap anywhere to zoom in on detail."
+        : "Image unlocked. Drag and pinch the image to adjust it.");
     });
 
+    // ---------- Opacity ----------
+
+    opacitySlider.value = num(storageGet("savedOpacity"), 0.5);
+    overlay.style.opacity = opacitySlider.value;
+
+    opacitySlider.addEventListener("input", () => {
+      overlay.style.opacity = opacitySlider.value;
+      storageSet("savedOpacity", opacitySlider.value);
+    });
+
+    // ---------- Image storage (IndexedDB, since photos are too big for localStorage) ----------
+
+    function openDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open("ar-drawer", 1);
+        req.onupgradeneeded = () => req.result.createObjectStore("kv");
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbGet(key) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const req = db.transaction("kv").objectStore("kv").get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function idbSet(key, value) {
+      const db = await openDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    function showOverlay(blob) {
+      if (overlayURL) URL.revokeObjectURL(overlayURL);
+      overlayURL = URL.createObjectURL(blob);
+      overlay.src = overlayURL;
+      overlay.style.display = "block";
+    }
+
+    async function loadOverlay() {
+      try {
+        let blob = await idbGet("overlay");
+        if (!blob) {
+          // Move an image saved by an older version out of localStorage
+          const legacy = storageGet("savedOverlay");
+          if (legacy) {
+            blob = await (await fetch(legacy)).blob();
+            await idbSet("overlay", blob);
+            localStorage.removeItem("savedOverlay");
+          }
+        }
+        if (blob) showOverlay(blob);
+      } catch (e) {
+        console.error("Could not load saved image:", e);
+      }
+    }
+
     function choosePhoto() {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/*";
-      input.onchange = e => {
-        const file = e.target.files[0];
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = function(event) {
-            const dataURL = event.target.result;
-            overlay.src = dataURL;
-            overlay.style.display = "block";
-            originX = 0;
-            originY = 0;
-            scale = 1;
-            rotation = 0;
-            applyTransform();
-            localStorage.setItem("savedOverlay", dataURL);
-            localStorage.setItem("savedPosition", JSON.stringify({ x: originX, y: originY }));
-            localStorage.setItem("savedScale", scale);
-            localStorage.setItem("savedRotation", rotation);
-          };
-          reader.readAsDataURL(file);
+      const picker = document.createElement("input");
+      picker.type = "file";
+      picker.accept = "image/*";
+      picker.onchange = async () => {
+        const file = picker.files[0];
+        if (!file) return;
+        const blob = new Blob([file], { type: file.type });
+        showOverlay(blob);
+        resetTransform();
+        resetView();
+        setLocked(false);
+        try {
+          await idbSet("overlay", blob);
+        } catch (e) {
+          console.error("Could not save image:", e);
+          alert("This image couldn't be saved, so it won't be here after a reload.");
         }
       };
-      input.click();
+      picker.click();
     }
 
     photoBtn.addEventListener("click", choosePhoto);
 
-    overlay.addEventListener("touchstart", e => {
-      if (e.touches.length === 1) {
-        lastTouch = e.touches[0];
-      } else if (e.touches.length === 2) {
-        const [t1, t2] = e.touches;
-        const dx = t1.clientX - t2.clientX;
-        const dy = t1.clientY - t2.clientY;
-        startDistance = Math.hypot(dx, dy);
-        startAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+    // ---------- Camera ----------
+
+    async function startCamera() {
+      // Ask for the sharpest feed the camera offers, since detail zoom magnifies it.
+      // Prefer the rear camera, but fall back to any camera rather than failing outright.
+      const sharp = { width: { ideal: 3840 }, height: { ideal: 2160 } };
+      const attempts = [
+        { facingMode: { exact: "environment" }, ...sharp },
+        { facingMode: "environment", ...sharp },
+        true
+      ];
+      let stream = null, lastError = null;
+      for (const videoConstraints of attempts) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+          break;
+        } catch (e) {
+          lastError = e;
+          if (e.name === "NotAllowedError") break;
+        }
       }
+
+      if (!stream) {
+        console.error("Camera error:", lastError);
+        if (!window.isSecureContext) {
+          alert("The camera only works when this page is opened over https.");
+        } else if (lastError && lastError.name === "NotAllowedError") {
+          alert("Camera access was blocked. Allow it in your browser settings and reload.");
+        } else {
+          alert("Could not access the camera.");
+        }
+        return;
+      }
+
+      video.srcObject = stream;
+    }
+
+    // ---------- Keep the screen awake ----------
+
+    let wakeLock = null, wakeLockPending = false;
+
+    async function keepAwake() {
+      if (!("wakeLock" in navigator) || wakeLock || wakeLockPending ||
+          document.visibilityState !== "visible") return;
+      wakeLockPending = true;
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      } catch (e) {
+        console.warn("Could not keep the screen awake:", e);
+      } finally {
+        wakeLockPending = false;
+      }
+    }
+
+    // The lock is dropped whenever the page is hidden, so take it again on return.
+    // Some browsers only grant it after a tap, so also retry on touch.
+    document.addEventListener("visibilitychange", keepAwake);
+    document.addEventListener("touchend", keepAwake);
+    document.addEventListener("click", keepAwake);
+
+    // ---------- Touch gestures ----------
+
+    // Each gesture either edits the stencil ("image") or moves the detail zoom ("view").
+    // That's decided when the first finger lands: on the stencil while it's unlocked
+    // means "image"; anywhere else, or anywhere while locked, means "view".
+    let mode = null;
+    // The current drag/pinch. It's rebuilt whenever the set of fingers changes,
+    // so adding or lifting a finger never makes anything jump.
+    let gesture = null;
+    let tap = null;       // the touch in progress, while it could still be a tap
+    let lastTap = null;   // the previous completed tap, for double-tap detection
+
+    function pinchInfo(t1, t2) {
+      const dx = t2.clientX - t1.clientX;
+      const dy = t2.clientY - t1.clientY;
+      return {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+        dist: Math.hypot(dx, dy),
+        angle: Math.atan2(dy, dx)
+      };
+    }
+
+    function startGesture(touches) {
+      if (touches.length === 1) {
+        const t = touches[0];
+        gesture = { count: 1, ids: [t.identifier], x: t.clientX, y: t.clientY };
+      } else if (touches.length >= 2) {
+        gesture = { count: 2, ids: [touches[0].identifier, touches[1].identifier], ...pinchInfo(touches[0], touches[1]) };
+      } else {
+        gesture = null;
+      }
+    }
+
+    function gestureMatches(touches) {
+      if (!gesture) return false;
+      if (gesture.count === 1) return touches.length === 1 && touches[0].identifier === gesture.ids[0];
+      return touches.length >= 2 &&
+        touches[0].identifier === gesture.ids[0] &&
+        touches[1].identifier === gesture.ids[1];
+    }
+
+    function moveImage(e) {
+      if (gesture.count === 1) {
+        const t = e.touches[0];
+        // Finger movement is in screen pixels; divide by the zoom to get stage pixels
+        originX += (t.clientX - gesture.x) / viewZoom;
+        originY += (t.clientY - gesture.y) / viewZoom;
+        gesture.x = t.clientX;
+        gesture.y = t.clientY;
+      } else {
+        const p = pinchInfo(e.touches[0], e.touches[1]);
+        const newScale = gesture.dist > 0 ? clampScale(scale * p.dist / gesture.dist) : scale;
+        const f = newScale / scale;
+        let dA = p.angle - gesture.angle;
+        if (dA > Math.PI) dA -= 2 * Math.PI;
+        else if (dA < -Math.PI) dA += 2 * Math.PI;
+
+        // Scale and rotate around the point between your fingers (not the image centre),
+        // and let the image follow as both fingers move together.
+        const r = overlay.getBoundingClientRect();
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        const vx = cx - gesture.x, vy = cy - gesture.y;
+        const cos = Math.cos(dA), sin = Math.sin(dA);
+        originX += (p.x + f * (vx * cos - vy * sin) - cx) / viewZoom;
+        originY += (p.y + f * (vx * sin + vy * cos) - cy) / viewZoom;
+
+        scale = newScale;
+        rotation += dA * 180 / Math.PI;
+        Object.assign(gesture, { x: p.x, y: p.y, dist: p.dist, angle: p.angle });
+      }
+      applyTransform();
+    }
+
+    function moveView(e) {
+      if (gesture.count === 1) {
+        const t = e.touches[0];
+        viewX += t.clientX - gesture.x;
+        viewY += t.clientY - gesture.y;
+        gesture.x = t.clientX;
+        gesture.y = t.clientY;
+        applyView();
+      } else {
+        const p = pinchInfo(e.touches[0], e.touches[1]);
+        const f = gesture.dist > 0 ? p.dist / gesture.dist : 1;
+        // Pan with the midpoint, then zoom around it
+        viewX += p.x - gesture.x;
+        viewY += p.y - gesture.y;
+        zoomViewAround(viewZoom * f, p.x, p.y);
+        Object.assign(gesture, { x: p.x, y: p.y, dist: p.dist, angle: p.angle });
+      }
+    }
+
+    stage.addEventListener("touchstart", e => {
+      // A new gesture starts when these are the only fingers on the screen
+      if (e.touches.length === e.changedTouches.length) {
+        mode = e.target === overlay && !locked ? "image" : "view";
+      }
+      stage.classList.remove("animate");
+      startGesture(e.touches);
+      const t = e.touches[0];
+      tap = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, time: Date.now() } : null;
     });
 
-    overlay.addEventListener("touchmove", e => {
+    stage.addEventListener("touchmove", e => {
       e.preventDefault();
-      if (e.touches.length === 1 && lastTouch) {
-        const dx = e.touches[0].clientX - lastTouch.clientX;
-        const dy = e.touches[0].clientY - lastTouch.clientY;
-        originX += dx;
-        originY += dy;
-        lastTouch = e.touches[0];
-        localStorage.setItem("savedPosition", JSON.stringify({ x: originX, y: originY }));
-        applyTransform();
-      } else if (e.touches.length === 2) {
-        const [t1, t2] = e.touches;
-        const dx = t1.clientX - t2.clientX;
-        const dy = t1.clientY - t2.clientY;
-        const newDistance = Math.hypot(dx, dy);
-        const newAngle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-        const zoomFactor = newDistance / startDistance;
-        scale *= zoomFactor;
-        scale = Math.max(0.1, Math.min(scale, 10));
-        rotation += newAngle - startAngle;
-        startDistance = newDistance;
-        startAngle = newAngle;
-
-        localStorage.setItem("savedScale", scale);
-        localStorage.setItem("savedRotation", rotation);
-        applyTransform();
+      if (tap && (e.touches.length > 1 ||
+          Math.hypot(e.touches[0].clientX - tap.x, e.touches[0].clientY - tap.y) > TAP_SLOP)) {
+        tap = null;
       }
+
+      if (!gestureMatches(e.touches)) {
+        startGesture(e.touches);
+        return;
+      }
+
+      if (mode === "image") moveImage(e);
+      else moveView(e);
     }, { passive: false });
 
-    let lastTap = 0;
-    overlay.addEventListener("touchend", () => {
-      const now = Date.now();
-      if (now - lastTap < 300) {
-        originX = 0;
-        originY = 0;
-        scale = 1;
-        rotation = 0;
-        localStorage.setItem("savedPosition", JSON.stringify({ x: originX, y: originY }));
-        localStorage.setItem("savedScale", scale);
-        localStorage.setItem("savedRotation", rotation);
-        applyTransform();
+    function onDoubleTap(x, y) {
+      if (mode === "image") {
+        resetTransform();
+      } else if (viewZoom > 1.01) {
+        resetView();
+      } else {
+        zoomViewAround(DETAIL_ZOOM, x, y, true);
       }
-      lastTap = now;
+    }
+
+    stage.addEventListener("touchend", e => {
+      startGesture(e.touches);
+      if (e.touches.length > 0) return;
+
+      // All fingers are up: was that a quick, still, single-finger tap?
+      const now = Date.now();
+      const wasTap = tap && now - tap.time < DOUBLE_TAP_MS;
+      if (wasTap && lastTap && lastTap.mode === mode && now - lastTap.time < DOUBLE_TAP_MS &&
+          Math.hypot(tap.x - lastTap.x, tap.y - lastTap.y) < 40) {
+        onDoubleTap(tap.x, tap.y);
+        lastTap = null;
+      } else {
+        lastTap = wasTap ? { x: tap.x, y: tap.y, time: now, mode } : null;
+      }
+      if (mode === "image") saveTransform();
+      tap = null;
     });
 
-    let pressTimer;
-    document.body.addEventListener("touchstart", () => {
-      pressTimer = setTimeout(choosePhoto, 1500);
+    stage.addEventListener("touchcancel", () => {
+      gesture = null;
+      tap = null;
+      if (mode === "image") saveTransform();
     });
-    document.body.addEventListener("touchend", () => {
+
+    // ---------- Long-press to choose a photo (only while unlocked) ----------
+
+    let pressTimer = null, pressStart = null;
+
+    function cancelLongPress() {
       clearTimeout(pressTimer);
+      pressTimer = null;
+    }
+
+    document.body.addEventListener("touchstart", e => {
+      cancelLongPress();
+      if (e.touches.length > 1) {
+        tap = null;   // a second finger means this isn't a tap, even if it landed off the stage
+        return;
+      }
+      if (locked || !stage.contains(e.target)) return;
+      pressStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        choosePhoto();
+      }, LONG_PRESS_MS);
     });
+
+    document.body.addEventListener("touchmove", e => {
+      if (pressTimer && (e.touches.length > 1 ||
+          Math.hypot(e.touches[0].clientX - pressStart.x, e.touches[0].clientY - pressStart.y) > TAP_SLOP)) {
+        cancelLongPress();
+      }
+    }, { passive: true });
+
+    document.body.addEventListener("touchend", cancelLongPress);
+    document.body.addEventListener("touchcancel", cancelLongPress);
+
+    // ---------- Start up ----------
+
+    loadTransform();
+    applyTransform();
+    applyView();
+    setLocked(storageGet("imageLocked") === "1");
+    loadOverlay();
+    startCamera();
+    keepAwake();
   </script>
 </body>
 </html>
