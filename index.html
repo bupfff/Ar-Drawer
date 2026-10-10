@@ -18,6 +18,11 @@
       -webkit-touch-callout: none;
     }
 
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
     /* The camera feed and the stencil live together on the stage, so detail zoom
        magnifies both by exactly the same amount and they stay lined up. */
     #stage {
@@ -35,11 +40,15 @@
       transition: transform 0.25s ease-out;
     }
 
+    /* Sized and positioned from script: it covers the screen like object-fit: cover,
+       but isn't cropped, so zooming out below 1× reveals the rest of the camera frame. */
     video {
+      position: absolute;
       display: block;
+      left: 0;
+      top: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
     }
 
     #overlay {
@@ -54,11 +63,9 @@
       display: none;
     }
 
-    #zoomBadge {
+    .pill {
       position: fixed;
       top: 15px;
-      left: 50%;
-      transform: translateX(-50%);
       z-index: 10;
       background: rgba(0, 0, 0, 0.6);
       color: #fff;
@@ -70,8 +77,17 @@
       cursor: pointer;
     }
 
-    #zoomBadge[hidden] {
+    .pill[hidden] {
       display: none;
+    }
+
+    #zoomBadge {
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    #lensBtn {
+      left: 15px;
     }
 
     #toast {
@@ -105,9 +121,34 @@
       flex-direction: column;
       gap: 10px;
       background: rgba(0, 0, 0, 0.6);
-      padding: 10px 12px;
+      padding: 0 12px 10px;
       border-radius: 15px;
       box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+
+    #controls.collapsed .row:not(.tools) {
+      display: none;
+    }
+
+    /* Handle at the top of the panel that hides/shows the sliders */
+    #controls #collapseBtn {
+      align-self: center;
+      width: 100%;
+      height: 18px;
+      padding: 0;
+      background: none;
+      box-shadow: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #collapseBtn::before {
+      content: "";
+      width: 36px;
+      height: 5px;
+      border-radius: 3px;
+      background: #fff8;
     }
 
     .row {
@@ -142,6 +183,11 @@
       box-shadow: 0 0 10px #fff8; /* white glow on hover */
     }
 
+    #controls #collapseBtn:hover {
+      background: none;
+      box-shadow: none;
+    }
+
     #controls button.on {
       background: #fff;
       color: #000;
@@ -169,7 +215,7 @@
       line-height: 1;
     }
 
-    #colorBtn {
+    #controls .small {
       height: 30px;
       padding: 0 10px;
     }
@@ -237,10 +283,12 @@
     <canvas id="overlay"></canvas>
   </div>
 
-  <button id="zoomBadge" hidden></button>
+  <button id="lensBtn" class="pill" hidden></button>
+  <button id="zoomBadge" class="pill" hidden></button>
   <div id="toast"></div>
 
   <div id="controls">
+    <button id="collapseBtn" aria-label="Show or hide sliders"></button>
     <div class="row">
       <label class="ctl"><span>Size</span>
         <input id="sizeSlider" type="range" min="-2.3026" max="2.3026" step="0.001" value="0">
@@ -253,10 +301,14 @@
       <label class="ctl"><span>Line weight</span>
         <input id="weightSlider" type="range" min="0.3" max="4" step="0.05" value="1">
       </label>
-      <label class="ctl"><span>Darkness</span>
+      <label class="ctl"><span>Line darkness</span>
         <input id="strengthSlider" type="range" min="1" max="8" step="0.1" value="3">
       </label>
-      <button id="colorBtn"><span id="colorSwatch"></span><span id="colorName"></span></button>
+      <label class="ctl"><span>Shading</span>
+        <input id="shadingSlider" type="range" min="0" max="1" step="0.01" value="0.5">
+      </label>
+      <button id="tonesBtn" class="small"></button>
+      <button id="colorBtn" class="small"><span id="colorSwatch"></span><span id="colorName"></span></button>
     </div>
     <div class="row tools">
       <button class="tool" id="lockBtn"><span class="icon">🔓</span><span class="label">Lock</span></button>
@@ -272,13 +324,18 @@
     const video = document.getElementById("video");
     const overlay = document.getElementById("overlay");
     const overlayCtx = overlay.getContext("2d");
+    const lensBtn = document.getElementById("lensBtn");
     const zoomBadge = document.getElementById("zoomBadge");
     const toast = document.getElementById("toast");
+    const controls = document.getElementById("controls");
+    const collapseBtn = document.getElementById("collapseBtn");
     const sizeSlider = document.getElementById("sizeSlider");
     const opacitySlider = document.getElementById("opacitySlider");
     const lineRow = document.getElementById("lineRow");
     const weightSlider = document.getElementById("weightSlider");
     const strengthSlider = document.getElementById("strengthSlider");
+    const shadingSlider = document.getElementById("shadingSlider");
+    const tonesBtn = document.getElementById("tonesBtn");
     const colorBtn = document.getElementById("colorBtn");
     const colorSwatch = document.getElementById("colorSwatch");
     const colorName = document.getElementById("colorName");
@@ -296,17 +353,23 @@
     const LONG_PRESS_MS = 1500;
     // Largest stencil we'll draw. iOS refuses canvases over ~16.7 million pixels.
     const MAX_SIDE = 4096, MAX_AREA = 16000000;
+    // Ask for the camera's full 4:3 sensor at high resolution: 4:3 shows the widest
+    // view, and detail zoom benefits from the extra pixels.
+    const SHARP = { width: { ideal: 4032 }, height: { ideal: 3024 } };
     const LINE_COLORS = [
       ["Red", [230, 30, 60]],
       ["Blue", [20, 90, 255]],
       ["Black", [0, 0, 0]],
       ["Green", [0, 170, 70]]
     ];
+    const TONE_STEPS = [0, 3, 5, 8];   // 0 = smooth shading
 
     // Stencil position/size/rotation, in stage coordinates
     let originX = 0, originY = 0, scale = 1, rotation = 0;
     // Detail zoom: the stage is drawn at screen = (viewX, viewY) + viewZoom * stagePoint
     let viewX = 0, viewY = 0, viewZoom = 1;
+    // Where the video sits on the stage (it overhangs the screen on two sides)
+    let videoBox = null;
     let locked = false;
     let savedSpot = null;
     let sourceImage = null;   // the decoded photo the stencil is drawn from
@@ -335,6 +398,10 @@
       try { localStorage.removeItem(key); } catch (e) { /* nothing to do */ }
     }
 
+    function storageJSON(key) {
+      try { return JSON.parse(storageGet(key)); } catch (e) { return null; }
+    }
+
     let toastTimer = null;
     function showToast(message) {
       toast.textContent = message;
@@ -356,30 +423,25 @@
       storageSet("savedTransform", JSON.stringify({ x: originX, y: originY, scale, rotation }));
     }
 
-    function readTransform(json) {
-      const t = JSON.parse(json);
+    function readTransform(t) {
       if (!t) return null;
       return { x: num(t.x, 0), y: num(t.y, 0), scale: clampScale(num(t.scale, 1)), rotation: num(t.rotation, 0) };
     }
 
     function loadTransform() {
-      try {
-        const t = readTransform(storageGet("savedTransform"));
-        if (t) {
-          ({ x: originX, y: originY, scale, rotation } = t);
-          return;
-        }
-        // Older versions saved each value under its own key
-        const pos = JSON.parse(storageGet("savedPosition"));
-        if (pos) {
-          originX = num(pos.x, 0);
-          originY = num(pos.y, 0);
-        }
-        scale = clampScale(num(storageGet("savedScale"), 1));
-        rotation = num(storageGet("savedRotation"), 0);
-      } catch (e) {
-        console.warn("Ignoring unreadable saved position:", e);
+      const t = readTransform(storageJSON("savedTransform"));
+      if (t) {
+        ({ x: originX, y: originY, scale, rotation } = t);
+        return;
       }
+      // Older versions saved each value under its own key
+      const pos = storageJSON("savedPosition");
+      if (pos) {
+        originX = num(pos.x, 0);
+        originY = num(pos.y, 0);
+      }
+      scale = clampScale(num(storageGet("savedScale"), 1));
+      rotation = num(storageGet("savedRotation"), 0);
     }
 
     function resetTransform() {
@@ -397,60 +459,55 @@
     });
     sizeSlider.addEventListener("change", saveTransform);
 
-    // ---------- Saved spot ----------
-
-    function setSavedSpot(spot) {
-      savedSpot = spot;
-      revertBtn.disabled = !spot;
-      if (spot) storageSet("savedSpot", JSON.stringify(spot));
-      else storageRemove("savedSpot");
-    }
-
-    function revertToSavedSpot() {
-      if (!savedSpot) {
-        showToast("No saved spot yet. Tap 📌 Save spot first.");
-        return;
-      }
-      ({ x: originX, y: originY, scale, rotation } = savedSpot);
-      applyTransform(true);
-      saveTransform();
-      resetView();
-      showToast("Back to your saved spot");
-    }
-
-    saveBtn.addEventListener("click", () => {
-      if (!sourceImage) {
-        showToast("Choose a photo first.");
-        return;
-      }
-      setSavedSpot({ x: originX, y: originY, scale, rotation });
-      showToast("Spot saved. Tap ↩️ Revert or two-finger tap to come back here.");
-    });
-
-    revertBtn.addEventListener("click", revertToSavedSpot);
-
     // ---------- Detail zoom (magnifies camera + stencil together) ----------
 
+    // Size the video to cover the screen without cropping it, so the parts of the
+    // camera frame that hang off the screen can be revealed by zooming out.
+    function layoutVideo() {
+      const W = stage.offsetWidth, H = stage.offsetHeight;
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) {
+        videoBox = { x: 0, y: 0, w: W, h: H };
+      } else {
+        const s = Math.max(W / vw, H / vh);
+        videoBox = { w: vw * s, h: vh * s, x: (W - vw * s) / 2, y: (H - vh * s) / 2 };
+      }
+      video.style.left = videoBox.x + "px";
+      video.style.top = videoBox.y + "px";
+      video.style.width = videoBox.w + "px";
+      video.style.height = videoBox.h + "px";
+      applyView();
+    }
+
+    // Zooming out stops once the whole camera frame fits on screen
+    function minViewZoom() {
+      return Math.min(1, stage.offsetWidth / videoBox.w, stage.offsetHeight / videoBox.h);
+    }
+
+    // Keep the camera frame filling the screen along one axis; centre it if it's smaller
+    function clampAxis(pos, start, size, screen) {
+      const span = viewZoom * size;
+      if (span <= screen) return (screen - span) / 2 - viewZoom * start;
+      return Math.min(-viewZoom * start, Math.max(screen - viewZoom * (start + size), pos));
+    }
+
     function clampView() {
-      viewZoom = Math.min(MAX_VIEW_ZOOM, Math.max(1, viewZoom));
-      // Keep the stage covering the whole screen, so you never see past its edges
-      const w = stage.offsetWidth, h = stage.offsetHeight;
-      viewX = Math.min(0, Math.max(w - w * viewZoom, viewX));
-      viewY = Math.min(0, Math.max(h - h * viewZoom, viewY));
+      viewZoom = Math.min(MAX_VIEW_ZOOM, Math.max(minViewZoom(), viewZoom));
+      viewX = clampAxis(viewX, videoBox.x, videoBox.w, stage.offsetWidth);
+      viewY = clampAxis(viewY, videoBox.y, videoBox.h, stage.offsetHeight);
     }
 
     function applyView(animate = false) {
       clampView();
       stage.classList.toggle("animate", animate);
       stage.style.transform = `translate(${viewX}px, ${viewY}px) scale(${viewZoom})`;
-      const zoomed = viewZoom > 1.01;
-      zoomBadge.hidden = !zoomed;
-      zoomBadge.textContent = `${viewZoom.toFixed(1)}× · tap to zoom out`;
+      zoomBadge.hidden = Math.abs(viewZoom - 1) < 0.01;
+      zoomBadge.textContent = `${viewZoom.toFixed(1)}× · tap for 1×`;
     }
 
     // Zoom so the stage point currently under screen point (x, y) stays under it
     function zoomViewAround(newZoom, x, y, animate = false) {
-      const k = Math.min(MAX_VIEW_ZOOM, Math.max(1, newZoom)) / viewZoom;
+      const k = Math.min(MAX_VIEW_ZOOM, Math.max(minViewZoom(), newZoom)) / viewZoom;
       viewX = x - k * (x - viewX);
       viewY = y - k * (y - viewY);
       viewZoom *= k;
@@ -466,7 +523,63 @@
 
     stage.addEventListener("transitionend", e => e.target.classList.remove("animate"));
     zoomBadge.addEventListener("click", resetView);
-    window.addEventListener("resize", () => applyView());
+    window.addEventListener("resize", layoutVideo);
+    video.addEventListener("loadedmetadata", layoutVideo);
+    video.addEventListener("resize", layoutVideo);   // camera frame size changed (e.g. rotation)
+
+    // ---------- Saved spot (stencil + zoom + lens) ----------
+
+    function readSpot(s) {
+      const t = readTransform(s);
+      if (!t) return null;
+      if (s.view) t.view = { x: num(s.view.x, 0), y: num(s.view.y, 0), zoom: num(s.view.zoom, 1) };
+      if (s.lens && typeof s.lens.deviceId === "string") t.lens = { deviceId: s.lens.deviceId, zoom: s.lens.zoom };
+      return t;
+    }
+
+    function setSavedSpot(spot) {
+      savedSpot = spot;
+      revertBtn.disabled = !spot;
+      if (spot) storageSet("savedSpot", JSON.stringify(spot));
+      else storageRemove("savedSpot");
+    }
+
+    async function revertToSavedSpot() {
+      if (!savedSpot) {
+        showToast("No saved spot yet. Tap 📌 Save spot first.");
+        return;
+      }
+      // Switch back to the lens the spot was saved with, since lenses see the paper at different sizes
+      if (savedSpot.lens) {
+        const i = lenses.findIndex(l => sameLens(l, savedSpot.lens));
+        if (i >= 0 && i !== currentLens) await selectLens(i, { quiet: true });
+      }
+      ({ x: originX, y: originY, scale, rotation } = savedSpot);
+      applyTransform(true);
+      saveTransform();
+      if (savedSpot.view) {
+        ({ x: viewX, y: viewY, zoom: viewZoom } = savedSpot.view);
+        applyView(true);
+      } else {
+        resetView();
+      }
+      showToast("Back to your saved spot");
+    }
+
+    saveBtn.addEventListener("click", () => {
+      if (!sourceImage) {
+        showToast("Choose a photo first.");
+        return;
+      }
+      setSavedSpot({
+        x: originX, y: originY, scale, rotation,
+        view: { x: viewX, y: viewY, zoom: viewZoom },
+        lens: lenses[currentLens] ? lensId(lenses[currentLens]) : undefined
+      });
+      showToast(`Spot saved at ${viewZoom.toFixed(1)}× zoom. Tap ↩️ Revert or two-finger tap to come back here.`);
+    });
+
+    revertBtn.addEventListener("click", revertToSavedSpot);
 
     // ---------- Lock ----------
 
@@ -482,9 +595,18 @@
     lockBtn.addEventListener("click", () => {
       setLocked(!locked);
       showToast(locked
-        ? "Image locked. Pinch or double-tap anywhere to zoom in on detail."
+        ? "Image locked. Pinch or double-tap anywhere to zoom."
         : "Image unlocked. Drag and pinch the image to adjust it.");
     });
+
+    // ---------- Panel ----------
+
+    function setCollapsed(value) {
+      controls.classList.toggle("collapsed", value);
+      storageSet("panelCollapsed", value ? "1" : "0");
+    }
+
+    collapseBtn.addEventListener("click", () => setCollapsed(!controls.classList.contains("collapsed")));
 
     // ---------- Opacity ----------
 
@@ -499,24 +621,26 @@
     // ---------- Line art ----------
 
     // Runs in a background thread so the app stays smooth on big photos.
-    // It's a "pencil sketch" filter: each pixel is compared with a blurred copy of
-    // its surroundings, so every edge, texture and bit of shading becomes a line,
-    // while flat areas turn fully transparent. Red, green and blue are each checked
-    // separately, so edges between colours of similar brightness aren't lost.
+    // Two layers are combined:
+    //  - Lines: each pixel is compared with a blurred copy of its surroundings, so every
+    //    edge and fine detail shows up, whether it's darker or lighter than what's around
+    //    it. Red, green and blue are checked separately, so edges between colours of
+    //    similar brightness aren't lost.
+    //  - Shading: how dark the photo is at each pixel, optionally grouped into value bands.
     function lineArtWorker() {
       // Blurred values are stored ×256 in 16-bit arrays: precise enough, and half the
       // memory of floats, which matters for 12-megapixel photos on a phone.
       let w = 0, h = 0, n = 0, channels = null, blurSigma = -1, blurred = null, tmp = null;
 
       // Box widths whose three passes together approximate a Gaussian blur
-      function boxSizes(sigma, n) {
-        const wIdeal = Math.sqrt(12 * sigma * sigma / n + 1);
+      function boxSizes(sigma, count) {
+        const wIdeal = Math.sqrt(12 * sigma * sigma / count + 1);
         let wl = Math.floor(wIdeal);
         if (wl % 2 === 0) wl--;
         const wu = wl + 2;
-        const m = Math.round((12 * sigma * sigma - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4));
+        const m = Math.round((12 * sigma * sigma - count * wl * wl - 4 * count * wl - 3 * count) / (-4 * wl - 4));
         const sizes = [];
-        for (let i = 0; i < n; i++) sizes.push(i < m ? wl : wu);
+        for (let i = 0; i < count; i++) sizes.push(i < m ? wl : wu);
         return sizes;
       }
 
@@ -579,24 +703,44 @@
           if (m.sigma !== blurSigma) {
             for (let c = 0; c < 3; c++) {
               const src = channels[c], dst = blurred[c];
-              for (let i = 0; i < n; i++) dst[i] = (255 - src[i]) * 256;
+              for (let i = 0; i < n; i++) dst[i] = src[i] * 256;
               gaussianBlur(dst, m.sigma);
             }
             blurSigma = m.sigma;
           }
           const [r, g, b] = m.color;
+          const steps = m.tones;
+          // With shading on, light details are already shown by the shading (less ink),
+          // so outlining them in ink is faded out as shading goes up.
+          const lightDetail = 1 - m.shading;
           const out = new Uint8ClampedArray(n * 4);
           for (let i = 0; i < n; i++) {
-            // Colour dodge: flat areas come out white, anything darker than its surroundings
-            // stays dark. Keep whichever channel shows the strongest line.
-            let dark = 0;
+            const r0 = channels[0][i], g0 = channels[1][i], b0 = channels[2][i];
+            const rm = blurred[0][i] / 256, gm = blurred[1][i] / 256, bm = blurred[2][i] / 256;
+
+            // Lines: relative difference from the local average, strongest channel wins.
+            // The floor of 48 stops camera noise in deep shadows turning into speckle.
+            let dark = 0, light = 0;
             for (let c = 0; c < 3; c++) {
-              const room = 255 - blurred[c][i] / 256;
-              const light = room <= 0.5 ? 255 : Math.min(255, channels[c][i] * 255 / room);
-              if (1 - light / 255 > dark) dark = 1 - light / 255;
+              const v = c === 0 ? r0 : c === 1 ? g0 : b0;
+              const mean = c === 0 ? rm : c === 1 ? gm : bm;
+              const diff = (mean - v) / Math.max(v, mean, 48);
+              if (diff > dark) dark = diff;
+              else if (-diff > light) light = -diff;
             }
-            // Darkness becomes opacity, after ignoring the faintest speckle
-            const ink = Math.min(1, Math.max(0, (dark - 0.02) * m.strength));
+            const detail = Math.max(dark, light * lightDetail);
+            const line = Math.min(1, Math.max(0, (detail - 0.02) * m.strength));
+
+            // Shading: smooth uses the sharp photo for full detail; value bands use the
+            // softened photo so each band has clean edges.
+            let tone = steps
+              ? 1 - (0.299 * rm + 0.587 * gm + 0.114 * bm) / 255
+              : 1 - (0.299 * r0 + 0.587 * g0 + 0.114 * b0) / 255;
+            if (steps) tone = Math.min(steps - 1, Math.floor(tone * steps)) / (steps - 1);
+            else tone = Math.max(0, (tone - 0.05) / 0.95);   // leave the brightest highlights as bare paper
+            const shade = m.shading * tone;
+
+            const ink = 1 - (1 - line) * (1 - shade);
             out[4 * i] = r;
             out[4 * i + 1] = g;
             out[4 * i + 2] = b;
@@ -610,8 +754,11 @@
     let lineArt = storageGet("lineArt") === "1";
     let lineColor = Math.round(num(storageGet("lineColor"), 0));
     if (!(lineColor >= 0 && lineColor < LINE_COLORS.length)) lineColor = 0;
+    let toneIndex = Math.round(num(storageGet("toneIndex"), 0));
+    if (!(toneIndex >= 0 && toneIndex < TONE_STEPS.length)) toneIndex = 0;
     weightSlider.value = num(storageGet("lineWeight"), 1);
     strengthSlider.value = num(storageGet("lineStrength"), 3);
+    shadingSlider.value = num(storageGet("lineShading"), 0.5);
 
     let worker = null, workerHasImage = false, renderId = 0, renderTimer = null;
 
@@ -650,6 +797,8 @@
         id: ++renderId,
         sigma: Math.max(0.5, parseFloat(weightSlider.value) * longSide / 1000),
         strength: parseFloat(strengthSlider.value),
+        shading: parseFloat(shadingSlider.value),
+        tones: TONE_STEPS[toneIndex],
         color: LINE_COLORS[lineColor][1]
       });
     }
@@ -679,6 +828,9 @@
       const [name, [r, g, b]] = LINE_COLORS[lineColor];
       colorSwatch.style.background = `rgb(${r}, ${g}, ${b})`;
       colorName.textContent = name;
+      const steps = TONE_STEPS[toneIndex];
+      tonesBtn.textContent = steps ? `${steps} tones` : "Smooth";
+      tonesBtn.disabled = parseFloat(shadingSlider.value) === 0;
     }
 
     lineBtn.addEventListener("click", () => {
@@ -692,14 +844,19 @@
       renderOverlay();
     });
 
-    weightSlider.addEventListener("input", () => {
-      storageSet("lineWeight", weightSlider.value);
-      renderOverlay({ debounce: true });
-    });
+    for (const [slider, key] of [[weightSlider, "lineWeight"], [strengthSlider, "lineStrength"], [shadingSlider, "lineShading"]]) {
+      slider.addEventListener("input", () => {
+        storageSet(key, slider.value);
+        updateLineUI();
+        renderOverlay({ debounce: true });
+      });
+    }
 
-    strengthSlider.addEventListener("input", () => {
-      storageSet("lineStrength", strengthSlider.value);
-      renderOverlay({ debounce: true });
+    tonesBtn.addEventListener("click", () => {
+      toneIndex = (toneIndex + 1) % TONE_STEPS.length;
+      storageSet("toneIndex", toneIndex);
+      updateLineUI();
+      renderOverlay();
     });
 
     colorBtn.addEventListener("click", () => {
@@ -816,33 +973,141 @@
 
     photoBtn.addEventListener("click", choosePhoto);
 
-    // ---------- Camera ----------
+    // ---------- Camera and lenses ----------
 
-    async function startCamera() {
-      // Ask for the sharpest feed the camera offers, since detail zoom magnifies it.
-      // Prefer the rear camera, but fall back to any camera rather than failing outright.
-      const sharp = { width: { ideal: 3840 }, height: { ideal: 2160 } };
-      const attempts = [
-        { facingMode: { exact: "environment" }, ...sharp },
-        { facingMode: "environment", ...sharp },
-        true
-      ];
-      let stream = null, lastError = null;
+    let track = null;
+    // Back cameras we can switch between, e.g. [{ name: "0.5×", deviceId }, { name: "1×", deviceId }].
+    // A lens can also be "this camera at zoom 0.5" on phones that offer ultra-wide that way.
+    let lenses = [];
+    let currentLens = -1;
+
+    function lensId(lens) {
+      return { deviceId: lens.deviceId, zoom: lens.zoom };
+    }
+
+    function sameLens(a, b) {
+      return a.deviceId === b.deviceId && (a.zoom || 1) === (b.zoom || 1);
+    }
+
+    async function openCamera(attempts) {
+      let lastError = null;
       for (const videoConstraints of attempts) {
         try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
-          break;
+          return await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
         } catch (e) {
           lastError = e;
           if (e.name === "NotAllowedError") break;
         }
       }
+      throw lastError || new Error("No camera");
+    }
 
-      if (!stream) {
-        console.error("Camera error:", lastError);
+    async function useStream(stream) {
+      if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+      const ready = new Promise(resolve => {
+        video.addEventListener("loadedmetadata", resolve, { once: true });
+        setTimeout(resolve, 3000);
+      });
+      video.srcObject = stream;
+      track = stream.getVideoTracks()[0];
+      await ready;
+      layoutVideo();
+    }
+
+    function lensName(label) {
+      if (/ultra/i.test(label)) return "0.5×";
+      if (/tele/i.test(label)) return "Tele";
+      if (/^back camera$/i.test(label) || /\bwide\b/i.test(label)) return "1×";
+      return null;
+    }
+
+    async function findLenses() {
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      const currentId = track.getSettings().deviceId;
+      let devices = [];
+      try {
+        devices = (await navigator.mediaDevices.enumerateDevices())
+          .filter(d => d.kind === "videoinput" && d.label && !/front|user|facetime/i.test(d.label));
+      } catch (e) {
+        console.warn("Could not list cameras:", e);
+      }
+      // iPhones also list "virtual" cameras that hop between lenses on their own,
+      // which would knock the stencil out of alignment, so prefer the single lenses.
+      const single = devices.filter(d => !/dual|triple/i.test(d.label));
+      const list = (single.length ? single : devices).map((d, i) => ({
+        deviceId: d.deviceId,
+        name: lensName(d.label) || `Lens ${i + 1}`
+      }));
+      if (!list.some(l => l.deviceId === currentId)) list.push({ deviceId: currentId, name: "1×" });
+
+      // Some phones offer the ultra-wide as zoom below 1 on the main camera instead
+      if (caps.zoom && caps.zoom.min < 0.99 && !list.some(l => l.name === "0.5×")) {
+        const main = list.find(l => l.deviceId === currentId);
+        main.zoom = 1;
+        main.name = "1×";
+        list.push({ deviceId: currentId, zoom: caps.zoom.min, name: `${+caps.zoom.min.toFixed(1)}×` });
+      }
+
+      const order = name => name === "0.5×" || /^0\.\d×$/.test(name) ? 0 : name === "1×" ? 1 : name === "Tele" ? 2 : 3;
+      lenses = list.sort((a, b) => order(a.name) - order(b.name));
+      const saved = storageJSON("lens");
+      currentLens = lenses.findIndex(l => saved && sameLens(l, saved) && l.deviceId === currentId);
+      if (currentLens < 0) currentLens = lenses.findIndex(l => l.deviceId === currentId && (l.zoom || 1) === 1);
+      updateLensUI();
+    }
+
+    function updateLensUI() {
+      lensBtn.hidden = lenses.length < 2;
+      if (lenses[currentLens]) lensBtn.textContent = `📷 ${lenses[currentLens].name}`;
+    }
+
+    async function applyZoom(zoom) {
+      try {
+        await track.applyConstraints({ advanced: [{ zoom }] });
+      } catch (e) {
+        console.warn("Camera zoom failed:", e);
+      }
+    }
+
+    async function selectLens(index, { quiet = false } = {}) {
+      const lens = lenses[index];
+      if (track.getSettings().deviceId !== lens.deviceId) {
+        try {
+          await useStream(await openCamera([{ deviceId: { exact: lens.deviceId }, ...SHARP }]));
+        } catch (e) {
+          console.error("Could not switch lens:", e);
+          showToast("Couldn't switch to that lens.");
+          return;
+        }
+      }
+      if (lens.zoom) await applyZoom(lens.zoom);
+      currentLens = index;
+      storageSet("lens", JSON.stringify(lensId(lens)));
+      updateLensUI();
+      if (!quiet) showToast(`Switched to the ${lens.name} lens. Realign the stencil if it moved, then 📌 Save spot.`);
+    }
+
+    lensBtn.addEventListener("click", () => {
+      if (lenses.length > 1) selectLens((currentLens + 1) % lenses.length);
+    });
+
+    async function startCamera() {
+      // Prefer the lens used last time, then the rear camera, then any camera
+      const saved = storageJSON("lens");
+      const attempts = [
+        { facingMode: { exact: "environment" }, ...SHARP },
+        { facingMode: "environment", ...SHARP },
+        true
+      ];
+      if (saved && typeof saved.deviceId === "string") attempts.unshift({ deviceId: { exact: saved.deviceId }, ...SHARP });
+
+      try {
+        await useStream(await openCamera(attempts));
+      } catch (e) {
+        console.error("Camera error:", e);
         if (!window.isSecureContext) {
           alert("The camera only works when this page is opened over https.");
-        } else if (lastError && lastError.name === "NotAllowedError") {
+        } else if (e.name === "NotAllowedError") {
           alert("Camera access was blocked. Allow it in your browser settings and reload.");
         } else {
           alert("Could not access the camera.");
@@ -850,7 +1115,8 @@
         return;
       }
 
-      video.srcObject = stream;
+      await findLenses();
+      if (saved && saved.zoom && lenses[currentLens] && lenses[currentLens].zoom) await applyZoom(saved.zoom);
     }
 
     // ---------- Keep the screen awake ----------
@@ -878,6 +1144,13 @@
     document.addEventListener("click", keepAwake);
 
     // ---------- Touch gestures ----------
+
+    // Gestures are handled for the whole screen (not just the stage), so you can still
+    // pinch on the black border when zoomed out below 1×. Touches on buttons and
+    // sliders are left alone.
+    function isUI(el) {
+      return controls.contains(el) || lensBtn.contains(el) || zoomBadge.contains(el);
+    }
 
     // Each gesture either edits the stencil ("image") or moves the detail zoom ("view").
     // That's decided when the first finger lands: on the stencil while it's unlocked
@@ -971,12 +1244,13 @@
       }
     }
 
-    stage.addEventListener("touchstart", e => {
+    document.addEventListener("touchstart", e => {
       // A new gesture starts when these are the only fingers on the screen
       if (e.touches.length === e.changedTouches.length) {
-        mode = e.target === overlay && !locked ? "image" : "view";
-        multiTap = { start: Date.now(), maxFingers: 0, moved: false, starts: {} };
+        mode = isUI(e.target) ? "ui" : e.target === overlay && !locked ? "image" : "view";
+        multiTap = mode === "ui" ? null : { start: Date.now(), maxFingers: 0, moved: false, starts: {} };
       }
+      if (mode === "ui") return;
       if (multiTap) {
         for (const t of e.changedTouches) multiTap.starts[t.identifier] = { x: t.clientX, y: t.clientY };
         multiTap.maxFingers = Math.max(multiTap.maxFingers, e.touches.length);
@@ -988,7 +1262,8 @@
       tap = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, time: Date.now() } : null;
     });
 
-    stage.addEventListener("touchmove", e => {
+    document.addEventListener("touchmove", e => {
+      if (mode === "ui" || !mode) return;   // let sliders work normally
       e.preventDefault();
 
       if (tap && (e.touches.length > 1 ||
@@ -1014,14 +1289,15 @@
     function onDoubleTap(x, y) {
       if (mode === "image") {
         resetTransform();
-      } else if (viewZoom > 1.01) {
+      } else if (Math.abs(viewZoom - 1) > 0.01) {
         resetView();
       } else {
         zoomViewAround(DETAIL_ZOOM, x, y, true);
       }
     }
 
-    stage.addEventListener("touchend", e => {
+    document.addEventListener("touchend", e => {
+      if (mode === "ui") return;
       startGesture(e.touches);
       if (e.touches.length > 0) return;
       const now = Date.now();
@@ -1048,7 +1324,7 @@
       tap = null;
     });
 
-    stage.addEventListener("touchcancel", () => {
+    document.addEventListener("touchcancel", () => {
       gesture = null;
       tap = null;
       multiTap = null;
@@ -1064,13 +1340,9 @@
       pressTimer = null;
     }
 
-    document.body.addEventListener("touchstart", e => {
+    document.addEventListener("touchstart", e => {
       cancelLongPress();
-      if (e.touches.length > 1) {
-        tap = null;   // a second finger means this isn't a tap, even if it landed off the stage
-        return;
-      }
-      if (locked || !stage.contains(e.target)) return;
+      if (e.touches.length > 1 || locked || isUI(e.target)) return;
       pressStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       pressTimer = setTimeout(() => {
         pressTimer = null;
@@ -1078,27 +1350,24 @@
       }, LONG_PRESS_MS);
     });
 
-    document.body.addEventListener("touchmove", e => {
+    document.addEventListener("touchmove", e => {
       if (pressTimer && (e.touches.length > 1 ||
           Math.hypot(e.touches[0].clientX - pressStart.x, e.touches[0].clientY - pressStart.y) > TAP_SLOP)) {
         cancelLongPress();
       }
     }, { passive: true });
 
-    document.body.addEventListener("touchend", cancelLongPress);
-    document.body.addEventListener("touchcancel", cancelLongPress);
+    document.addEventListener("touchend", cancelLongPress);
+    document.addEventListener("touchcancel", cancelLongPress);
 
     // ---------- Start up ----------
 
     loadTransform();
     applyTransform();
-    applyView();
+    layoutVideo();
     setLocked(storageGet("imageLocked") === "1");
-    try {
-      setSavedSpot(readTransform(storageGet("savedSpot")));
-    } catch (e) {
-      setSavedSpot(null);
-    }
+    setCollapsed(storageGet("panelCollapsed") === "1");
+    setSavedSpot(readSpot(storageJSON("savedSpot")));
     updateLineUI();
     loadOverlay();
     startCamera();
