@@ -30,7 +30,8 @@
       will-change: transform;
     }
 
-    #stage.animate {
+    #stage.animate,
+    #overlay.animate {
       transition: transform 0.25s ease-out;
     }
 
@@ -41,7 +42,7 @@
       object-fit: cover;
     }
 
-    #overlayImage {
+    #overlay {
       position: absolute;
       top: 50%;
       left: 50%;
@@ -51,7 +52,6 @@
       z-index: 5;
       touch-action: none;
       display: none;
-      -webkit-user-drag: none;
     }
 
     #zoomBadge {
@@ -102,14 +102,28 @@
       right: 15px;
       z-index: 10;
       display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 12px;
+      border-radius: 15px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+
+    .row {
+      display: flex;
       flex-wrap: wrap;
       gap: 10px 14px;
       align-items: flex-end;
       justify-content: center;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 10px 15px;
-      border-radius: 15px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+
+    .row[hidden] {
+      display: none;
+    }
+
+    .row.tools {
+      gap: 8px;
     }
 
     #controls button {
@@ -117,9 +131,7 @@
       color: #fff;
       border: none;
       border-radius: 10px;
-      height: 34px;
-      padding: 0 12px;
-      font-size: 16px;
+      font-size: 14px;
       cursor: pointer;
       transition: 0.2s ease;
       box-shadow: 0 4px 8px rgba(0,0,0,0.4);
@@ -133,6 +145,43 @@
     #controls button.on {
       background: #fff;
       color: #000;
+    }
+
+    #controls button:disabled {
+      opacity: 0.4;
+    }
+
+    /* Toolbar buttons: icon on top, short label underneath */
+    #controls .tool {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      width: 56px;
+      height: 48px;
+      padding: 0;
+      font-size: 11px;
+    }
+
+    #controls .tool .icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    #colorBtn {
+      height: 30px;
+      padding: 0 10px;
+    }
+
+    #colorSwatch {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: -1px;
+      border: 1px solid #fff8;
     }
 
     .ctl {
@@ -185,33 +234,58 @@
 
   <div id="stage">
     <video id="video" autoplay playsinline muted></video>
-    <img id="overlayImage" alt="" />
+    <canvas id="overlay"></canvas>
   </div>
 
   <button id="zoomBadge" hidden></button>
   <div id="toast"></div>
 
   <div id="controls">
-    <label class="ctl"><span>Size</span>
-      <input id="sizeSlider" type="range" min="-2.3026" max="2.3026" step="0.001" value="0">
-    </label>
-    <label class="ctl"><span>Opacity</span>
-      <input id="opacitySlider" type="range" min="0.05" max="1" step="0.01" value="0.5">
-    </label>
-    <button id="lockBtn">🔓 Lock image</button>
-    <button id="photoBtn">Choose Photo</button>
+    <div class="row">
+      <label class="ctl"><span>Size</span>
+        <input id="sizeSlider" type="range" min="-2.3026" max="2.3026" step="0.001" value="0">
+      </label>
+      <label class="ctl"><span>Opacity</span>
+        <input id="opacitySlider" type="range" min="0.05" max="1" step="0.01" value="0.5">
+      </label>
+    </div>
+    <div class="row" id="lineRow" hidden>
+      <label class="ctl"><span>Line weight</span>
+        <input id="weightSlider" type="range" min="0.3" max="4" step="0.05" value="1">
+      </label>
+      <label class="ctl"><span>Darkness</span>
+        <input id="strengthSlider" type="range" min="1" max="8" step="0.1" value="3">
+      </label>
+      <button id="colorBtn"><span id="colorSwatch"></span><span id="colorName"></span></button>
+    </div>
+    <div class="row tools">
+      <button class="tool" id="lockBtn"><span class="icon">🔓</span><span class="label">Lock</span></button>
+      <button class="tool" id="lineBtn"><span class="icon">✏️</span><span>Line art</span></button>
+      <button class="tool" id="saveBtn"><span class="icon">📌</span><span>Save spot</span></button>
+      <button class="tool" id="revertBtn"><span class="icon">↩️</span><span>Revert</span></button>
+      <button class="tool" id="photoBtn"><span class="icon">🖼️</span><span>Photo</span></button>
+    </div>
   </div>
 
   <script>
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
-    const overlay = document.getElementById("overlayImage");
+    const overlay = document.getElementById("overlay");
+    const overlayCtx = overlay.getContext("2d");
     const zoomBadge = document.getElementById("zoomBadge");
     const toast = document.getElementById("toast");
-    const controls = document.getElementById("controls");
     const sizeSlider = document.getElementById("sizeSlider");
     const opacitySlider = document.getElementById("opacitySlider");
+    const lineRow = document.getElementById("lineRow");
+    const weightSlider = document.getElementById("weightSlider");
+    const strengthSlider = document.getElementById("strengthSlider");
+    const colorBtn = document.getElementById("colorBtn");
+    const colorSwatch = document.getElementById("colorSwatch");
+    const colorName = document.getElementById("colorName");
     const lockBtn = document.getElementById("lockBtn");
+    const lineBtn = document.getElementById("lineBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const revertBtn = document.getElementById("revertBtn");
     const photoBtn = document.getElementById("photoBtn");
 
     const MIN_SCALE = 0.1, MAX_SCALE = 10;
@@ -220,12 +294,22 @@
     const TAP_SLOP = 10;          // px a finger can drift and still count as a tap / long-press
     const DOUBLE_TAP_MS = 300;
     const LONG_PRESS_MS = 1500;
+    // Largest stencil we'll draw. iOS refuses canvases over ~16.7 million pixels.
+    const MAX_SIDE = 4096, MAX_AREA = 16000000;
+    const LINE_COLORS = [
+      ["Red", [230, 30, 60]],
+      ["Blue", [20, 90, 255]],
+      ["Black", [0, 0, 0]],
+      ["Green", [0, 170, 70]]
+    ];
 
     // Stencil position/size/rotation, in stage coordinates
     let originX = 0, originY = 0, scale = 1, rotation = 0;
     // Detail zoom: the stage is drawn at screen = (viewX, viewY) + viewZoom * stagePoint
     let viewX = 0, viewY = 0, viewZoom = 1;
     let locked = false;
+    let savedSpot = null;
+    let sourceImage = null;   // the decoded photo the stencil is drawn from
     let overlayURL = null;
 
     // ---------- Small helpers ----------
@@ -247,6 +331,10 @@
       try { localStorage.setItem(key, value); } catch (e) { console.warn("Could not save", key, e); }
     }
 
+    function storageRemove(key) {
+      try { localStorage.removeItem(key); } catch (e) { /* nothing to do */ }
+    }
+
     let toastTimer = null;
     function showToast(message) {
       toast.textContent = message;
@@ -257,7 +345,8 @@
 
     // ---------- Stencil position / size / rotation ----------
 
-    function applyTransform() {
+    function applyTransform(animate = false) {
+      overlay.classList.toggle("animate", animate);
       overlay.style.transform =
         `translate(-50%, -50%) translate(${originX}px, ${originY}px) scale(${scale}) rotate(${rotation}deg)`;
       sizeSlider.value = Math.log(scale);
@@ -267,14 +356,17 @@
       storageSet("savedTransform", JSON.stringify({ x: originX, y: originY, scale, rotation }));
     }
 
+    function readTransform(json) {
+      const t = JSON.parse(json);
+      if (!t) return null;
+      return { x: num(t.x, 0), y: num(t.y, 0), scale: clampScale(num(t.scale, 1)), rotation: num(t.rotation, 0) };
+    }
+
     function loadTransform() {
       try {
-        const t = JSON.parse(storageGet("savedTransform"));
+        const t = readTransform(storageGet("savedTransform"));
         if (t) {
-          originX = num(t.x, 0);
-          originY = num(t.y, 0);
-          scale = clampScale(num(t.scale, 1));
-          rotation = num(t.rotation, 0);
+          ({ x: originX, y: originY, scale, rotation } = t);
           return;
         }
         // Older versions saved each value under its own key
@@ -304,6 +396,38 @@
       applyTransform();
     });
     sizeSlider.addEventListener("change", saveTransform);
+
+    // ---------- Saved spot ----------
+
+    function setSavedSpot(spot) {
+      savedSpot = spot;
+      revertBtn.disabled = !spot;
+      if (spot) storageSet("savedSpot", JSON.stringify(spot));
+      else storageRemove("savedSpot");
+    }
+
+    function revertToSavedSpot() {
+      if (!savedSpot) {
+        showToast("No saved spot yet. Tap 📌 Save spot first.");
+        return;
+      }
+      ({ x: originX, y: originY, scale, rotation } = savedSpot);
+      applyTransform(true);
+      saveTransform();
+      resetView();
+      showToast("Back to your saved spot");
+    }
+
+    saveBtn.addEventListener("click", () => {
+      if (!sourceImage) {
+        showToast("Choose a photo first.");
+        return;
+      }
+      setSavedSpot({ x: originX, y: originY, scale, rotation });
+      showToast("Spot saved. Tap ↩️ Revert or two-finger tap to come back here.");
+    });
+
+    revertBtn.addEventListener("click", revertToSavedSpot);
 
     // ---------- Detail zoom (magnifies camera + stencil together) ----------
 
@@ -340,7 +464,7 @@
       applyView(true);
     }
 
-    stage.addEventListener("transitionend", () => stage.classList.remove("animate"));
+    stage.addEventListener("transitionend", e => e.target.classList.remove("animate"));
     zoomBadge.addEventListener("click", resetView);
     window.addEventListener("resize", () => applyView());
 
@@ -348,7 +472,8 @@
 
     function setLocked(value) {
       locked = value;
-      lockBtn.textContent = locked ? "🔒 Image locked" : "🔓 Lock image";
+      lockBtn.querySelector(".icon").textContent = locked ? "🔒" : "🔓";
+      lockBtn.querySelector(".label").textContent = locked ? "Locked" : "Lock";
       lockBtn.classList.toggle("on", locked);
       sizeSlider.disabled = locked;
       storageSet("imageLocked", locked ? "1" : "0");
@@ -369,6 +494,219 @@
     opacitySlider.addEventListener("input", () => {
       overlay.style.opacity = opacitySlider.value;
       storageSet("savedOpacity", opacitySlider.value);
+    });
+
+    // ---------- Line art ----------
+
+    // Runs in a background thread so the app stays smooth on big photos.
+    // It's a "pencil sketch" filter: each pixel is compared with a blurred copy of
+    // its surroundings, so every edge, texture and bit of shading becomes a line,
+    // while flat areas turn fully transparent. Red, green and blue are each checked
+    // separately, so edges between colours of similar brightness aren't lost.
+    function lineArtWorker() {
+      // Blurred values are stored ×256 in 16-bit arrays: precise enough, and half the
+      // memory of floats, which matters for 12-megapixel photos on a phone.
+      let w = 0, h = 0, n = 0, channels = null, blurSigma = -1, blurred = null, tmp = null;
+
+      // Box widths whose three passes together approximate a Gaussian blur
+      function boxSizes(sigma, n) {
+        const wIdeal = Math.sqrt(12 * sigma * sigma / n + 1);
+        let wl = Math.floor(wIdeal);
+        if (wl % 2 === 0) wl--;
+        const wu = wl + 2;
+        const m = Math.round((12 * sigma * sigma - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4));
+        const sizes = [];
+        for (let i = 0; i < n; i++) sizes.push(i < m ? wl : wu);
+        return sizes;
+      }
+
+      function boxBlurH(src, dst, r) {
+        const norm = 1 / (2 * r + 1);
+        for (let y = 0; y < h; y++) {
+          const row = y * w;
+          let acc = r * src[row];
+          for (let j = 0; j < r; j++) acc += src[row + Math.min(j, w - 1)];
+          for (let x = 0; x < w; x++) {
+            acc += src[row + Math.min(x + r, w - 1)];
+            dst[row + x] = acc * norm + 0.5;
+            acc -= src[row + Math.max(x - r, 0)];
+          }
+        }
+      }
+
+      function boxBlurV(src, dst, r) {
+        const norm = 1 / (2 * r + 1);
+        for (let x = 0; x < w; x++) {
+          let acc = r * src[x];
+          for (let j = 0; j < r; j++) acc += src[Math.min(j, h - 1) * w + x];
+          for (let y = 0; y < h; y++) {
+            acc += src[Math.min(y + r, h - 1) * w + x];
+            dst[y * w + x] = acc * norm + 0.5;
+            acc -= src[Math.max(y - r, 0) * w + x];
+          }
+        }
+      }
+
+      // Blurs a in place (using tmp as scratch space)
+      function gaussianBlur(a, sigma) {
+        for (const size of boxSizes(sigma, 3)) {
+          const r = (size - 1) / 2;
+          if (r < 1) continue;
+          boxBlurH(a, tmp, r);
+          boxBlurV(tmp, a, r);
+        }
+      }
+
+      self.onmessage = e => {
+        const m = e.data;
+        if (m.type === "image") {
+          w = m.width;
+          h = m.height;
+          n = w * h;
+          const px = new Uint8ClampedArray(m.buffer);
+          channels = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
+          for (let i = 0; i < n; i++) {
+            const a = px[4 * i + 3] / 255;   // see-through parts of the photo count as white
+            for (let c = 0; c < 3; c++) channels[c][i] = px[4 * i + c] * a + 255 * (1 - a);
+          }
+          blurred = [new Uint16Array(n), new Uint16Array(n), new Uint16Array(n)];
+          tmp = new Uint16Array(n);
+          blurSigma = -1;
+          return;
+        }
+
+        if (m.type === "render") {
+          if (m.sigma !== blurSigma) {
+            for (let c = 0; c < 3; c++) {
+              const src = channels[c], dst = blurred[c];
+              for (let i = 0; i < n; i++) dst[i] = (255 - src[i]) * 256;
+              gaussianBlur(dst, m.sigma);
+            }
+            blurSigma = m.sigma;
+          }
+          const [r, g, b] = m.color;
+          const out = new Uint8ClampedArray(n * 4);
+          for (let i = 0; i < n; i++) {
+            // Colour dodge: flat areas come out white, anything darker than its surroundings
+            // stays dark. Keep whichever channel shows the strongest line.
+            let dark = 0;
+            for (let c = 0; c < 3; c++) {
+              const room = 255 - blurred[c][i] / 256;
+              const light = room <= 0.5 ? 255 : Math.min(255, channels[c][i] * 255 / room);
+              if (1 - light / 255 > dark) dark = 1 - light / 255;
+            }
+            // Darkness becomes opacity, after ignoring the faintest speckle
+            const ink = Math.min(1, Math.max(0, (dark - 0.02) * m.strength));
+            out[4 * i] = r;
+            out[4 * i + 1] = g;
+            out[4 * i + 2] = b;
+            out[4 * i + 3] = ink * 255;
+          }
+          self.postMessage({ id: m.id, width: w, height: h, buffer: out.buffer }, [out.buffer]);
+        }
+      };
+    }
+
+    let lineArt = storageGet("lineArt") === "1";
+    let lineColor = Math.round(num(storageGet("lineColor"), 0));
+    if (!(lineColor >= 0 && lineColor < LINE_COLORS.length)) lineColor = 0;
+    weightSlider.value = num(storageGet("lineWeight"), 1);
+    strengthSlider.value = num(storageGet("lineStrength"), 3);
+
+    let worker = null, workerHasImage = false, renderId = 0, renderTimer = null;
+
+    function getWorker() {
+      if (!worker) {
+        const src = "(" + lineArtWorker.toString() + ")()";
+        worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+        worker.onmessage = onLineArt;
+        worker.onerror = e => {
+          console.error("Line art failed:", e);
+          showToast("Line art isn't working on this device.");
+        };
+      }
+      return worker;
+    }
+
+    function drawPhoto() {
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      overlayCtx.drawImage(sourceImage, 0, 0, overlay.width, overlay.height);
+    }
+
+    function requestLineArt() {
+      const w = getWorker();
+      if (!workerHasImage) {
+        drawPhoto();
+        const data = overlayCtx.getImageData(0, 0, overlay.width, overlay.height);
+        w.postMessage({ type: "image", width: data.width, height: data.height, buffer: data.data.buffer },
+          [data.data.buffer]);
+        workerHasImage = true;
+        showToast("Making line art…");
+      }
+      // Line weight is relative to the photo's size, so it looks the same on any image
+      const longSide = Math.max(overlay.width, overlay.height);
+      w.postMessage({
+        type: "render",
+        id: ++renderId,
+        sigma: Math.max(0.5, parseFloat(weightSlider.value) * longSide / 1000),
+        strength: parseFloat(strengthSlider.value),
+        color: LINE_COLORS[lineColor][1]
+      });
+    }
+
+    function onLineArt(e) {
+      const m = e.data;
+      if (m.id !== renderId || !lineArt) return;   // a newer request is on its way
+      overlayCtx.putImageData(new ImageData(new Uint8ClampedArray(m.buffer), m.width, m.height), 0, 0);
+    }
+
+    function renderOverlay({ debounce = false } = {}) {
+      if (!sourceImage) return;
+      clearTimeout(renderTimer);
+      if (!lineArt) {
+        renderId++;   // drop any line art still being worked on
+        drawPhoto();
+      } else if (debounce) {
+        renderTimer = setTimeout(requestLineArt, 120);
+      } else {
+        requestLineArt();
+      }
+    }
+
+    function updateLineUI() {
+      lineBtn.classList.toggle("on", lineArt);
+      lineRow.hidden = !lineArt;
+      const [name, [r, g, b]] = LINE_COLORS[lineColor];
+      colorSwatch.style.background = `rgb(${r}, ${g}, ${b})`;
+      colorName.textContent = name;
+    }
+
+    lineBtn.addEventListener("click", () => {
+      if (!sourceImage) {
+        showToast("Choose a photo first.");
+        return;
+      }
+      lineArt = !lineArt;
+      storageSet("lineArt", lineArt ? "1" : "0");
+      updateLineUI();
+      renderOverlay();
+    });
+
+    weightSlider.addEventListener("input", () => {
+      storageSet("lineWeight", weightSlider.value);
+      renderOverlay({ debounce: true });
+    });
+
+    strengthSlider.addEventListener("input", () => {
+      storageSet("lineStrength", strengthSlider.value);
+      renderOverlay({ debounce: true });
+    });
+
+    colorBtn.addEventListener("click", () => {
+      lineColor = (lineColor + 1) % LINE_COLORS.length;
+      storageSet("lineColor", lineColor);
+      updateLineUI();
+      renderOverlay();
     });
 
     // ---------- Image storage (IndexedDB, since photos are too big for localStorage) ----------
@@ -401,11 +739,32 @@
       });
     }
 
-    function showOverlay(blob) {
+    async function showOverlay(blob) {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      try {
+        // Wait for "load" rather than img.decode(), which never finishes while the page is hidden
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error("Image failed to load"));
+          img.src = url;
+        });
+      } catch (e) {
+        URL.revokeObjectURL(url);
+        throw e;
+      }
       if (overlayURL) URL.revokeObjectURL(overlayURL);
-      overlayURL = URL.createObjectURL(blob);
-      overlay.src = overlayURL;
+      overlayURL = url;
+
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      const fit = Math.min(1, MAX_SIDE / Math.max(iw, ih), Math.sqrt(MAX_AREA / (iw * ih)));
+      overlay.width = Math.round(iw * fit);
+      overlay.height = Math.round(ih * fit);
+      sourceImage = img;
+      workerHasImage = false;
       overlay.style.display = "block";
+      drawPhoto();
+      renderOverlay();
     }
 
     async function loadOverlay() {
@@ -417,10 +776,10 @@
           if (legacy) {
             blob = await (await fetch(legacy)).blob();
             await idbSet("overlay", blob);
-            localStorage.removeItem("savedOverlay");
+            storageRemove("savedOverlay");
           }
         }
-        if (blob) showOverlay(blob);
+        if (blob) await showOverlay(blob);
       } catch (e) {
         console.error("Could not load saved image:", e);
       }
@@ -434,10 +793,17 @@
         const file = picker.files[0];
         if (!file) return;
         const blob = new Blob([file], { type: file.type });
-        showOverlay(blob);
+        try {
+          await showOverlay(blob);
+        } catch (e) {
+          console.error("Could not open image:", e);
+          alert("Couldn't open that image. Try a JPEG or PNG.");
+          return;
+        }
         resetTransform();
         resetView();
         setLocked(false);
+        setSavedSpot(null);   // the old spot was for the old image
         try {
           await idbSet("overlay", blob);
         } catch (e) {
@@ -522,6 +888,7 @@
     let gesture = null;
     let tap = null;       // the touch in progress, while it could still be a tap
     let lastTap = null;   // the previous completed tap, for double-tap detection
+    let multiTap = null;  // tracks whether the whole gesture could be a two-finger tap
 
     function pinchInfo(t1, t2) {
       const dx = t2.clientX - t1.clientX;
@@ -608,8 +975,14 @@
       // A new gesture starts when these are the only fingers on the screen
       if (e.touches.length === e.changedTouches.length) {
         mode = e.target === overlay && !locked ? "image" : "view";
+        multiTap = { start: Date.now(), maxFingers: 0, moved: false, starts: {} };
+      }
+      if (multiTap) {
+        for (const t of e.changedTouches) multiTap.starts[t.identifier] = { x: t.clientX, y: t.clientY };
+        multiTap.maxFingers = Math.max(multiTap.maxFingers, e.touches.length);
       }
       stage.classList.remove("animate");
+      overlay.classList.remove("animate");
       startGesture(e.touches);
       const t = e.touches[0];
       tap = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, time: Date.now() } : null;
@@ -621,6 +994,12 @@
       if (tap && (e.touches.length > 1 ||
           Math.hypot(e.touches[0].clientX - tap.x, e.touches[0].clientY - tap.y) > TAP_SLOP)) {
         tap = null;
+      }
+      if (multiTap && !multiTap.moved) {
+        for (const t of e.changedTouches) {
+          const s = multiTap.starts[t.identifier];
+          if (s && Math.hypot(t.clientX - s.x, t.clientY - s.y) > TAP_SLOP) multiTap.moved = true;
+        }
       }
 
       if (!gestureMatches(e.touches)) {
@@ -645,9 +1024,18 @@
     stage.addEventListener("touchend", e => {
       startGesture(e.touches);
       if (e.touches.length > 0) return;
+      const now = Date.now();
+
+      // Two fingers tapped together and lifted, without moving: jump back to the saved spot
+      if (multiTap && multiTap.maxFingers === 2 && !multiTap.moved && now - multiTap.start < 400) {
+        revertToSavedSpot();
+        multiTap = null;
+        lastTap = null;
+        return;
+      }
+      multiTap = null;
 
       // All fingers are up: was that a quick, still, single-finger tap?
-      const now = Date.now();
       const wasTap = tap && now - tap.time < DOUBLE_TAP_MS;
       if (wasTap && lastTap && lastTap.mode === mode && now - lastTap.time < DOUBLE_TAP_MS &&
           Math.hypot(tap.x - lastTap.x, tap.y - lastTap.y) < 40) {
@@ -663,6 +1051,7 @@
     stage.addEventListener("touchcancel", () => {
       gesture = null;
       tap = null;
+      multiTap = null;
       if (mode === "image") saveTransform();
     });
 
@@ -705,6 +1094,12 @@
     applyTransform();
     applyView();
     setLocked(storageGet("imageLocked") === "1");
+    try {
+      setSavedSpot(readTransform(storageGet("savedSpot")));
+    } catch (e) {
+      setSavedSpot(null);
+    }
+    updateLineUI();
     loadOverlay();
     startCamera();
     keepAwake();
