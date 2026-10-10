@@ -298,11 +298,14 @@
       </label>
     </div>
     <div class="row" id="lineRow" hidden>
+      <label class="ctl"><span>Line detail</span>
+        <input id="detailSlider" type="range" min="0" max="1" step="0.01" value="0.6">
+      </label>
       <label class="ctl"><span>Line weight</span>
         <input id="weightSlider" type="range" min="0.3" max="4" step="0.05" value="1">
       </label>
       <label class="ctl"><span>Line darkness</span>
-        <input id="strengthSlider" type="range" min="1" max="8" step="0.1" value="3">
+        <input id="strengthSlider" type="range" min="0.5" max="10" step="0.1" value="3">
       </label>
       <label class="ctl"><span>Shading</span>
         <input id="shadingSlider" type="range" min="0" max="1" step="0.01" value="0.5">
@@ -332,6 +335,7 @@
     const sizeSlider = document.getElementById("sizeSlider");
     const opacitySlider = document.getElementById("opacitySlider");
     const lineRow = document.getElementById("lineRow");
+    const detailSlider = document.getElementById("detailSlider");
     const weightSlider = document.getElementById("weightSlider");
     const strengthSlider = document.getElementById("strengthSlider");
     const shadingSlider = document.getElementById("shadingSlider");
@@ -622,15 +626,23 @@
 
     // Runs in a background thread so the app stays smooth on big photos.
     // Two layers are combined:
-    //  - Lines: each pixel is compared with a blurred copy of its surroundings, so every
-    //    edge and fine detail shows up, whether it's darker or lighter than what's around
-    //    it. Red, green and blue are checked separately, so edges between colours of
-    //    similar brightness aren't lost.
+    //  - Lines: edge detection. Wherever brightness or colour changes, a line is drawn
+    //    along the exact centre of the change (one pixel wide, then thickened by Line
+    //    weight). Edges are found at a fine and a coarser scale, so both crisp and soft
+    //    edges show up, and their strength is measured relative to this photo's own
+    //    edges, so soft photos get as much detail as sharp ones.
     //  - Shading: how dark the photo is at each pixel, optionally grouped into value bands.
+    // The expensive edge finding runs once per photo; slider changes only redo the cheap parts.
     function lineArtWorker() {
-      // Blurred values are stored ×256 in 16-bit arrays: precise enough, and half the
-      // memory of floats, which matters for 12-megapixel photos on a phone.
-      let w = 0, h = 0, n = 0, channels = null, blurSigma = -1, blurred = null, tmp = null;
+      // Images are stored in 16-bit arrays (values ×256 or scaled), which is precise
+      // enough and keeps memory down for 12-megapixel photos on a phone.
+      let w = 0, h = 0, n = 0;
+      let lum = null;        // brightness, 0-255
+      let toneBlur = null;   // softened brightness ×256, for clean value bands
+      let edges = [];        // per scale: edge strength (1 = this photo's strong edges) ×16384
+      let noise = [];        // per scale: typical faint-edge level, as a fraction of strong edges
+      let ink = null, buf = null, tmp = null;
+      let kept = null, stack = null;
 
       // Box widths whose three passes together approximate a Gaussian blur
       function boxSizes(sigma, count) {
@@ -681,6 +693,95 @@
         }
       }
 
+      // Finds edges at one blur scale across the given channels (strongest channel wins),
+      // keeps only the ridge of each edge (non-maximum suppression), and normalises so
+      // this photo's strong edges come out around 1.
+      function findEdges(sources, sigma) {
+        const mag = new Uint16Array(n);   // gradient strength ÷ 2
+        const dir = new Uint8Array(n);    // which neighbours lie across the edge
+        for (const src of sources) {
+          for (let i = 0; i < n; i++) buf[i] = src[i] * 256;
+          gaussianBlur(buf, sigma);
+          for (let y = 1; y < h - 1; y++) {
+            for (let x = 1, i = y * w + 1; x < w - 1; x++, i++) {
+              const gx = buf[i + 1] - buf[i - 1];
+              const gy = buf[i + w] - buf[i - w];
+              const m = Math.sqrt(gx * gx + gy * gy) / 2;
+              if (m > mag[i]) {
+                mag[i] = m;
+                const ax = Math.abs(gx), ay = Math.abs(gy);
+                dir[i] = ay <= 0.4142 * ax ? 0 : ay >= 2.4142 * ax ? 2 : gx * gy > 0 ? 1 : 3;
+              }
+            }
+          }
+        }
+
+        // Keep a pixel only where it's the strongest point across the edge,
+        // which turns blurry bands into thin lines on the edge's centre.
+        const offsets = [1, w + 1, w, w - 1];
+        let maxM = 1;
+        for (let y = 1; y < h - 1; y++) {
+          for (let x = 1, i = y * w + 1; x < w - 1; x++, i++) {
+            const m = mag[i];
+            const o = offsets[dir[i]];
+            if (m > 0 && m >= mag[i - o] && m > mag[i + o]) {
+              dir[i] |= 4;
+              if (m > maxM) maxM = m;
+            }
+          }
+        }
+
+        // How strong are this photo's edges? Most ridges in a photo are faint grain, so the
+        // median says how strong the grain is, and the top 0.5% says how strong real edges are.
+        const BINS = 4096, hist = new Uint32Array(BINS);
+        let count = 0;
+        for (let i = 0; i < n; i++) {
+          if (dir[i] & 4) {
+            hist[Math.min(BINS - 1, Math.floor(mag[i] / maxM * BINS))]++;
+            count++;
+          }
+        }
+        let p50 = 0, strong = 0, seen = 0;
+        for (let b = 0; b < BINS; b++) {
+          seen += hist[b];
+          if (!p50 && seen >= count * 0.5) p50 = (b + 1) / BINS * maxM;
+          if (seen >= count * 0.995) { strong = (b + 1) / BINS * maxM; break; }
+        }
+        strong = Math.max(strong, 1);
+
+        const out = new Uint16Array(n);
+        for (let i = 0; i < n; i++) {
+          if (dir[i] & 4) out[i] = Math.min(65535, mag[i] / strong * 16384);
+        }
+        edges.push(out);
+        noise.push(Math.min(1, p50 / strong));
+      }
+
+      // Keeps edges at least `high` strong, plus any fainter ridge (down to `low`) that
+      // connects to one. Real lines are long and connected, so their faint stretches
+      // survive, while isolated specks of grain don't. Sets bit `bit` in kept[].
+      function traceEdges(edge, low, high, bit) {
+        let top = 0;
+        // Edges never touch the image border, so neighbours are always in range
+        const visit = q => {
+          if (edge[q] >= low && !(kept[q] & bit)) {
+            kept[q] |= bit;
+            stack[top++] = q;
+          }
+        };
+        for (let i = 0; i < n; i++) {
+          if (edge[i] < high || kept[i] & bit) continue;
+          kept[i] |= bit;
+          stack[top++] = i;
+          while (top) {
+            const p = stack[--top];
+            visit(p - w - 1); visit(p - w); visit(p - w + 1);
+            visit(p - 1); visit(p + 1);
+            visit(p + w - 1); visit(p + w); visit(p + w + 1);
+          }
+        }
+      }
+
       self.onmessage = e => {
         const m = e.data;
         if (m.type === "image") {
@@ -688,65 +789,100 @@
           h = m.height;
           n = w * h;
           const px = new Uint8ClampedArray(m.buffer);
-          channels = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
+          const channels = [new Uint8Array(n), new Uint8Array(n), new Uint8Array(n)];
+          lum = new Uint8Array(n);
           for (let i = 0; i < n; i++) {
             const a = px[4 * i + 3] / 255;   // see-through parts of the photo count as white
-            for (let c = 0; c < 3; c++) channels[c][i] = px[4 * i + c] * a + 255 * (1 - a);
+            const r = px[4 * i] * a + 255 * (1 - a);
+            const g = px[4 * i + 1] * a + 255 * (1 - a);
+            const b = px[4 * i + 2] * a + 255 * (1 - a);
+            channels[0][i] = r;
+            channels[1][i] = g;
+            channels[2][i] = b;
+            lum[i] = 0.299 * r + 0.587 * g + 0.114 * b;
           }
-          blurred = [new Uint16Array(n), new Uint16Array(n), new Uint16Array(n)];
+          buf = new Uint16Array(n);
           tmp = new Uint16Array(n);
-          blurSigma = -1;
+          edges = [];
+          noise = [];
+
+          const longSide = Math.max(w, h);
+          const fine = Math.max(1, longSide / 2500);
+          findEdges(channels, fine);          // crisp detail, including colour-only edges
+          findEdges([lum], fine * 2.5);       // softer edges that the fine pass sees only faintly
+
+          toneBlur = new Uint16Array(n);
+          for (let i = 0; i < n; i++) toneBlur[i] = lum[i] * 256;
+          gaussianBlur(toneBlur, Math.max(2, longSide / 500));
+          ink = buf;   // reuse: the edge pass is done with it
+          kept = new Uint8Array(n);
+          stack = new Uint32Array(n);
+          self.postMessage({ type: "ready" });
           return;
         }
 
         if (m.type === "render") {
-          if (m.sigma !== blurSigma) {
-            for (let c = 0; c < 3; c++) {
-              const src = channels[c], dst = blurred[c];
-              for (let i = 0; i < n; i++) dst[i] = src[i] * 256;
-              gaussianBlur(dst, m.sigma);
-            }
-            blurSigma = m.sigma;
+          // Line detail sets how faint an edge can be and still get drawn. Thresholds are
+          // relative to this photo's grain level, so grain stays out at the default.
+          // `high` starts a line; `low` is how faint a line may get while it continues.
+          const lows = [], highs = [];
+          kept.fill(0);
+          for (let k = 0; k < edges.length; k++) {
+            const high = Math.min(0.35, noise[k] * (4.5 - 1.5 * m.detail));
+            const low = Math.min(high * 0.8, noise[k] * (2.2 - 1.4 * m.detail));
+            highs.push(high);
+            lows.push(low);
+            // (at least 1, so tracing only ever follows actual edge ridges)
+            traceEdges(edges[k], Math.max(1, low * 16384), Math.max(1, high * 16384), 1 << k);
           }
+          // Line darkness: a curve that keeps faint edges visible as it's raised
+          const LUT = 1024, curve = new Float32Array(LUT);
+          for (let j = 0; j < LUT; j++) curve[j] = 1 - Math.exp(-m.darkness * j / 256);
+
+          for (let i = 0; i < n; i++) {
+            let strength = 0;
+            if (kept[i]) {
+              for (let k = 0; k < edges.length; k++) {
+                if (!(kept[i] & (1 << k))) continue;
+                const s = (edges[k][i] / 16384 - lows[k]) / (1 - lows[k]);
+                if (s > strength) strength = s;
+              }
+            }
+            ink[i] = curve[Math.min(LUT - 1, strength * 256 | 0)] * 60000;
+          }
+
+          // Line weight: blur the 1px lines into thicker ones, then scale back up so a
+          // line keeps its darkness however thick it gets
+          let boost = 1;
+          if (m.thickness >= 0.6) {
+            gaussianBlur(ink, m.thickness);
+            boost = m.thickness * Math.sqrt(2 * Math.PI);
+          }
+
           const [r, g, b] = m.color;
           const steps = m.tones;
-          // With shading on, light details are already shown by the shading (less ink),
-          // so outlining them in ink is faded out as shading goes up.
-          const lightDetail = 1 - m.shading;
           const out = new Uint8ClampedArray(n * 4);
           for (let i = 0; i < n; i++) {
-            const r0 = channels[0][i], g0 = channels[1][i], b0 = channels[2][i];
-            const rm = blurred[0][i] / 256, gm = blurred[1][i] / 256, bm = blurred[2][i] / 256;
-
-            // Lines: relative difference from the local average, strongest channel wins.
-            // The floor of 48 stops camera noise in deep shadows turning into speckle.
-            let dark = 0, light = 0;
-            for (let c = 0; c < 3; c++) {
-              const v = c === 0 ? r0 : c === 1 ? g0 : b0;
-              const mean = c === 0 ? rm : c === 1 ? gm : bm;
-              const diff = (mean - v) / Math.max(v, mean, 48);
-              if (diff > dark) dark = diff;
-              else if (-diff > light) light = -diff;
-            }
-            const detail = Math.max(dark, light * lightDetail);
-            const line = Math.min(1, Math.max(0, (detail - 0.02) * m.strength));
+            const line = Math.min(1, ink[i] / 60000 * boost);
 
             // Shading: smooth uses the sharp photo for full detail; value bands use the
             // softened photo so each band has clean edges.
-            let tone = steps
-              ? 1 - (0.299 * rm + 0.587 * gm + 0.114 * bm) / 255
-              : 1 - (0.299 * r0 + 0.587 * g0 + 0.114 * b0) / 255;
-            if (steps) tone = Math.min(steps - 1, Math.floor(tone * steps)) / (steps - 1);
-            else tone = Math.max(0, (tone - 0.05) / 0.95);   // leave the brightest highlights as bare paper
+            let tone;
+            if (steps) {
+              tone = 1 - toneBlur[i] / 65280;
+              tone = Math.min(steps - 1, Math.floor(tone * steps)) / (steps - 1);
+            } else {
+              tone = Math.max(0, (1 - lum[i] / 255 - 0.05) / 0.95);   // brightest highlights stay bare paper
+            }
             const shade = m.shading * tone;
 
-            const ink = 1 - (1 - line) * (1 - shade);
+            const a = 1 - (1 - line) * (1 - shade);
             out[4 * i] = r;
             out[4 * i + 1] = g;
             out[4 * i + 2] = b;
-            out[4 * i + 3] = ink * 255;
+            out[4 * i + 3] = a * 255;
           }
-          self.postMessage({ id: m.id, width: w, height: h, buffer: out.buffer }, [out.buffer]);
+          self.postMessage({ type: "render", id: m.id, width: w, height: h, buffer: out.buffer }, [out.buffer]);
         }
       };
     }
@@ -756,9 +892,14 @@
     if (!(lineColor >= 0 && lineColor < LINE_COLORS.length)) lineColor = 0;
     let toneIndex = Math.round(num(storageGet("toneIndex"), 0));
     if (!(toneIndex >= 0 && toneIndex < TONE_STEPS.length)) toneIndex = 0;
-    weightSlider.value = num(storageGet("lineWeight"), 1);
-    strengthSlider.value = num(storageGet("lineStrength"), 3);
-    shadingSlider.value = num(storageGet("lineShading"), 0.5);
+    // Line weight and darkness changed meaning in the edge-detection version, so they use new keys
+    const LINE_SLIDERS = [
+      [detailSlider, "lineDetail", 0.6],
+      [weightSlider, "lineThickness", 1],
+      [strengthSlider, "lineDarkness", 3],
+      [shadingSlider, "lineShading", 0.5]
+    ];
+    for (const [slider, key, fallback] of LINE_SLIDERS) slider.value = num(storageGet(key), fallback);
 
     let worker = null, workerHasImage = false, renderId = 0, renderTimer = null;
 
@@ -795,8 +936,9 @@
       w.postMessage({
         type: "render",
         id: ++renderId,
-        sigma: Math.max(0.5, parseFloat(weightSlider.value) * longSide / 1000),
-        strength: parseFloat(strengthSlider.value),
+        detail: parseFloat(detailSlider.value),
+        thickness: parseFloat(weightSlider.value) * longSide / 2000,
+        darkness: parseFloat(strengthSlider.value),
         shading: parseFloat(shadingSlider.value),
         tones: TONE_STEPS[toneIndex],
         color: LINE_COLORS[lineColor][1]
@@ -805,7 +947,7 @@
 
     function onLineArt(e) {
       const m = e.data;
-      if (m.id !== renderId || !lineArt) return;   // a newer request is on its way
+      if (m.type !== "render" || m.id !== renderId || !lineArt) return;   // a newer request is on its way
       overlayCtx.putImageData(new ImageData(new Uint8ClampedArray(m.buffer), m.width, m.height), 0, 0);
     }
 
@@ -844,7 +986,7 @@
       renderOverlay();
     });
 
-    for (const [slider, key] of [[weightSlider, "lineWeight"], [strengthSlider, "lineStrength"], [shadingSlider, "lineShading"]]) {
+    for (const [slider, key] of LINE_SLIDERS) {
       slider.addEventListener("input", () => {
         storageSet(key, slider.value);
         updateLineUI();
