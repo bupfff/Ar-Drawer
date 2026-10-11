@@ -111,6 +111,18 @@
       opacity: 1;
     }
 
+    /* Present in the page (so it can't be garbage-collected mid-pick) but invisible.
+       Not display: none, which some mobile browsers won't open a picker for. */
+    #filePicker {
+      position: fixed;
+      left: -10px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
     /* Everything on top of the camera fades away when the controls are hidden */
     .chrome {
       transition: opacity 0.2s ease, translate 0.2s ease;
@@ -339,6 +351,8 @@
     </div>
   </div>
 
+  <input id="filePicker" type="file" accept="image/*" tabindex="-1" aria-hidden="true">
+
   <script>
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
@@ -365,6 +379,7 @@
     const revertBtn = document.getElementById("revertBtn");
     const photoBtn = document.getElementById("photoBtn");
     const moreBtn = document.getElementById("moreBtn");
+    const filePicker = document.getElementById("filePicker");
 
     const MIN_SCALE = 0.1, MAX_SCALE = 10;
     const MAX_VIEW_ZOOM = 8;
@@ -1082,7 +1097,11 @@
       });
     }
 
+    // Shows a photo as the stencil. Returns false if a newer photo was asked for while this
+    // one was loading (e.g. you picked a photo before the saved one finished loading).
+    let overlayLoads = 0;
     async function showOverlay(blob) {
+      const load = ++overlayLoads;
       const url = URL.createObjectURL(blob);
       const img = new Image();
       try {
@@ -1094,7 +1113,12 @@
         });
       } catch (e) {
         URL.revokeObjectURL(url);
+        if (load !== overlayLoads) return false;
         throw e;
+      }
+      if (load !== overlayLoads) {
+        URL.revokeObjectURL(url);
+        return false;
       }
       if (overlayURL) URL.revokeObjectURL(overlayURL);
       overlayURL = url;
@@ -1108,6 +1132,7 @@
       overlay.style.display = "block";
       drawPhoto();
       renderOverlay();
+      return true;
     }
 
     async function loadOverlay() {
@@ -1128,34 +1153,36 @@
       }
     }
 
+    // The file input lives in the page rather than being created on the fly: a detached
+    // input can be garbage-collected while the photo picker is open, and then the chosen
+    // photo never arrives.
     function choosePhoto() {
-      const picker = document.createElement("input");
-      picker.type = "file";
-      picker.accept = "image/*";
-      picker.onchange = async () => {
-        const file = picker.files[0];
-        if (!file) return;
-        const blob = new Blob([file], { type: file.type });
-        try {
-          await showOverlay(blob);
-        } catch (e) {
-          console.error("Could not open image:", e);
-          alert("Couldn't open that image. Try a JPEG or PNG.");
-          return;
-        }
-        resetTransform();
-        resetView();
-        setLocked(false);
-        setSavedSpot(null);   // the old spot was for the old image
-        try {
-          await idbSet("overlay", blob);
-        } catch (e) {
-          console.error("Could not save image:", e);
-          alert("This image couldn't be saved, so it won't be here after a reload.");
-        }
-      };
-      picker.click();
+      filePicker.value = "";   // so choosing the same photo again still counts as a change
+      filePicker.click();
     }
+
+    filePicker.addEventListener("change", async () => {
+      const file = filePicker.files[0];
+      if (!file) return;
+      const blob = new Blob([file], { type: file.type });
+      try {
+        if (!await showOverlay(blob)) return;   // another photo was chosen meanwhile
+      } catch (e) {
+        console.error("Could not open image:", e);
+        alert("Couldn't open that image. Try a JPEG or PNG.");
+        return;
+      }
+      resetTransform();
+      resetView();
+      setLocked(false);
+      setSavedSpot(null);   // the old spot was for the old image
+      try {
+        await idbSet("overlay", blob);
+      } catch (e) {
+        console.error("Could not save image:", e);
+        alert("This image couldn't be saved, so it won't be here after a reload.");
+      }
+    });
 
     photoBtn.addEventListener("click", choosePhoto);
 
@@ -1196,9 +1223,39 @@
       });
       video.srcObject = stream;
       track = stream.getVideoTracks()[0];
+      track.addEventListener("ended", recoverCamera);
       await ready;
       layoutVideo();
     }
+
+    // The camera can be taken away while the app is in the background, or by the photo
+    // picker's "Take Photo" option on iPhones. Reopen it (same lens) when we're back.
+    let recovering = false;
+    async function recoverCamera() {
+      if (!track || recovering || document.visibilityState !== "visible") return;
+      if (track.readyState !== "ended") {
+        if (video.paused) video.play().catch(() => {});
+        return;
+      }
+      recovering = true;
+      const lens = lenses[currentLens];
+      try {
+        await useStream(await openCamera([
+          lens ? { deviceId: { exact: lens.deviceId }, ...SHARP } : { facingMode: "environment", ...SHARP },
+          true
+        ]));
+        if (lens && lens.zoom) await applyZoom(lens.zoom);
+      } catch (e) {
+        console.error("Could not restart the camera:", e);
+        // If the picker still has the camera, we'll try again when focus comes back
+        if (document.hasFocus()) showToast("The camera stopped. Reload the page to restart it.");
+      } finally {
+        recovering = false;
+      }
+    }
+
+    document.addEventListener("visibilitychange", recoverCamera);
+    window.addEventListener("focus", recoverCamera);
 
     function lensName(label) {
       if (/ultra/i.test(label)) return "0.5×";
